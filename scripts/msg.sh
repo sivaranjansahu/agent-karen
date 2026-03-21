@@ -19,10 +19,11 @@ MSG="${2:?Usage: msg.sh <role> \"<message>\" [type]}"
 TYPE="${3:-message}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+AGENT_DIR="$(pwd)/.agent"
 
-INBOX="$ROOT/.agent/inbox/${ROLE}.jsonl"
-SURFACE_FILE="$ROOT/.agent/state/${ROLE}_surface"
-COMMS="$ROOT/.agent/communications.md"
+INBOX="$AGENT_DIR/inbox/${ROLE}.jsonl"
+SURFACE_FILE="$AGENT_DIR/state/${ROLE}_surface"
+COMMS="$AGENT_DIR/communications.md"
 FROM="${AGENT_ROLE:-manager}"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 TS_HUMAN=$(date "+%Y-%m-%d %H:%M:%S UTC")
@@ -44,7 +45,7 @@ echo "{\"from\":\"$FROM\",\"type\":\"$TYPE\",\"ts\":\"$TIMESTAMP\",\"body\":$MSG
 echo "▸ Logged: $FROM → $ROLE ($TYPE)"
 
 # 3. Relay to Mattermost (if configured)
-MM_ENV="$ROOT/.agent/state/mattermost.env"
+MM_ENV="$AGENT_DIR/state/mattermost.env"
 if [[ -f "$MM_ENV" ]]; then
   (
     # shellcheck source=/dev/null
@@ -63,7 +64,7 @@ fi
 
 # 4. Push-trigger: wake the target terminal
 source "$ROOT/lib/mux.sh"
-WS_FILE="$ROOT/.agent/state/${ROLE}_workspace"
+WS_FILE="$AGENT_DIR/state/${ROLE}_workspace"
 if [[ -f "$WS_FILE" ]]; then
   PROMPT="📬 New $TYPE from $FROM. Check .agent/inbox/${ROLE}.jsonl and respond."
   mux_send "$ROLE" "$PROMPT" 2>/dev/null && \

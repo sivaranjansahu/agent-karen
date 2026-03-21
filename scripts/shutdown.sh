@@ -13,8 +13,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-STATE="$ROOT/.agent/state"
-COMMS="$ROOT/.agent/communications.md"
+AGENT_DIR="$(pwd)/.agent"
+STATE="$AGENT_DIR/state"
+COMMS="$AGENT_DIR/communications.md"
 TS_HUMAN=$(date "+%Y-%m-%d %H:%M:%S UTC")
 
 # Load multiplexer abstraction

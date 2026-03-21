@@ -7,7 +7,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-STATE="$ROOT/.agent/state"
+AGENT_DIR="$(pwd)/.agent"
+STATE="$AGENT_DIR/state"
 
 # Load multiplexer abstraction
 source "$ROOT/lib/mux.sh"
@@ -37,7 +38,7 @@ for ws_file in "$STATE"/*_workspace; do
   fi
 
   # Check last message time from this role
-  INBOX="$ROOT/.agent/inbox/${ROLE}.jsonl"
+  INBOX="$AGENT_DIR/inbox/${ROLE}.jsonl"
   LAST_MSG=""
   if [[ -f "$INBOX" ]]; then
     MSG_COUNT=$(wc -l < "$INBOX" | tr -d ' ')
@@ -47,7 +48,7 @@ for ws_file in "$STATE"/*_workspace; do
   fi
 
   # Check last outbound message from this role in comms
-  LAST_SENT=$(grep -c "\`$ROLE\` →" "$ROOT/.agent/communications.md" 2>/dev/null || echo "0")
+  LAST_SENT=$(grep -c "\`$ROLE\` →" "$AGENT_DIR/communications.md" 2>/dev/null || echo "0")
 
   if [[ "$STATUS" == "UP" ]]; then
     echo "  ✓ $ROLE  $WS_ID  $SF_ID  (inbox: $MSG_COUNT msgs, sent: $LAST_SENT msgs)"

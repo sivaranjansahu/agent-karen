@@ -10,22 +10,31 @@ WORKDIR="${1:-$(pwd)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "╔══════════════════════════════════════════╗"
-echo "║   Multi-Agent cmux Scaffold Bootstrap    ║"
+echo "║   agent-karen — talk to the manager      ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
-# ── 1. Check cmux ─────────────────────────────────────────────────────────
-if ! command -v cmux &>/dev/null; then
-  echo "ERROR: cmux CLI not found. Add it to PATH:"
-  echo "  sudo ln -sf \"/Applications/cmux.app/Contents/Resources/bin/cmux\" /usr/local/bin/cmux"
+# ── 1. Check terminal multiplexer ─────────────────────────────────────────
+source "$SCRIPT_DIR/lib/mux.sh"
+BACKEND=$(mux_backend)
+if [[ "$BACKEND" == "none" ]]; then
+  echo "ERROR: No supported terminal found."
+  echo ""
+  echo "  Options:"
+  echo "    1. Install tmux:  brew install tmux  (then run this from inside tmux)"
+  echo "    2. Install cmux:  https://cmux.com   (then run this from inside cmux)"
+  echo ""
+  echo "  Quick start with tmux:"
+  echo "    tmux new-session -s agents"
+  echo "    karen start $WORKDIR"
   exit 1
 fi
-SOCK="${CMUX_SOCKET_PATH:-/tmp/cmux.sock}"
-if [[ ! -S "$SOCK" ]]; then
-  echo "ERROR: cmux socket not found at $SOCK — is cmux running?"
-  exit 1
+if [[ "$BACKEND" == "terminal" ]]; then
+  echo "⚠ Running in plain terminal mode (iTerm/Terminal.app)"
+  echo "  Agents will open in new tabs. For best experience, use tmux or cmux."
+  echo ""
 fi
-echo "✓ cmux socket: $SOCK"
+echo "✓ Backend: $BACKEND"
 
 # ── 2. Check / install beads ───────────────────────────────────────────────
 if ! command -v bd &>/dev/null; then
@@ -42,17 +51,17 @@ else
 fi
 
 # ── 3. Init .agent/ directory ─────────────────────────────────────────────
-mkdir -p "$SCRIPT_DIR/.agent/inbox" \
-         "$SCRIPT_DIR/.agent/context" \
-         "$SCRIPT_DIR/.agent/state"
+mkdir -p "$WORKDIR/.agent/inbox" \
+         "$WORKDIR/.agent/context" \
+         "$WORKDIR/.agent/state"
 
 # Clear stale surface/workspace files from a previous session
-rm -f "$SCRIPT_DIR/.agent/state/"*_surface \
-      "$SCRIPT_DIR/.agent/state/"*_workspace
+rm -f "$WORKDIR/.agent/state/"*_surface \
+      "$WORKDIR/.agent/state/"*_workspace
 echo "✓ .agent/ directory ready"
 
 # ── 4. Init / reset communications.md ─────────────────────────────────────
-COMMS="$SCRIPT_DIR/.agent/communications.md"
+COMMS="$WORKDIR/.agent/communications.md"
 TS_HUMAN=$(date "+%Y-%m-%d %H:%M:%S UTC")
 cat > "$COMMS" << EOF
 # Agent Communications Log
@@ -102,11 +111,41 @@ if [[ -z "$SF_ID" ]]; then
   SF_ID="${CMUX_SURFACE_ID:-}"
 fi
 if [[ -n "$SF_ID" ]]; then
-  echo "$SF_ID" > "$SCRIPT_DIR/.agent/state/manager_surface"
+  echo "$SF_ID" > "$WORKDIR/.agent/state/manager_surface"
   echo "✓ Manager surface: $SF_ID"
 else
   echo "⚠ Surface ID unknown. Run: cmux identify --json"
   echo "  Then: echo <surface_id> > .agent/state/manager_surface"
+fi
+
+# Store manager workspace so msg.sh can wake the manager terminal
+# For cmux: extract workspace from the identify JSON or list-workspaces
+# For tmux: the manager runs in the current window
+WS_ID=""
+if [[ "$BACKEND" == "cmux" ]]; then
+  WS_ID=$(python3 -c "
+import json
+raw = '''$SF_JSON'''
+if raw.strip():
+    d = json.loads(raw)
+    r = d.get('result', d)
+    for key in ['workspace_id', 'workspace']:
+        v = r.get(key)
+        if v:
+            print(v)
+            break
+" 2>/dev/null || echo "")
+  if [[ -z "$WS_ID" ]]; then
+    # Fallback: get the currently selected workspace
+    WS_ID=$(cmux list-workspaces 2>/dev/null | grep '\[selected\]' | grep -oE 'workspace:[0-9]+' || echo "")
+  fi
+elif [[ "$BACKEND" == "tmux" ]]; then
+  WS_ID="agents:orchestrator"
+fi
+
+if [[ -n "$WS_ID" ]]; then
+  echo "$WS_ID" > "$WORKDIR/.agent/state/manager_workspace"
+  echo "✓ Manager workspace: $WS_ID"
 fi
 
 # ── 7. Set manager CLAUDE.md ───────────────────────────────────────────────
@@ -114,13 +153,13 @@ cp "$SCRIPT_DIR/roles/manager.md" "$WORKDIR/CLAUDE.md"
 echo "✓ CLAUDE.md set to manager role"
 
 # ── 8. Start Mattermost watcher (if configured) ─────────────────────────────
-MM_ENV="$SCRIPT_DIR/.agent/state/mattermost.env"
+MM_ENV="$WORKDIR/.agent/state/mattermost.env"
 if [[ -f "$MM_ENV" ]]; then
   source "$MM_ENV"
   if [[ -n "${MM_BOT_TOKEN:-}" && "$MM_BOT_TOKEN" != "PASTE_TOKEN_HERE" ]]; then
-    "$SCRIPT_DIR/scripts/mm-watch.sh" general tasks escalations > "$SCRIPT_DIR/.agent/state/mm-watch.log" 2>&1 &
+    "$SCRIPT_DIR/scripts/mm-watch.sh" general tasks escalations > "$WORKDIR/.agent/state/mm-watch.log" 2>&1 &
     MM_WATCH_PID=$!
-    echo "$MM_WATCH_PID" > "$SCRIPT_DIR/.agent/state/mm-watch.pid"
+    echo "$MM_WATCH_PID" > "$WORKDIR/.agent/state/mm-watch.pid"
     echo "✓ Mattermost watcher started (PID $MM_WATCH_PID)"
   else
     echo "⚠ Mattermost configured but bot token missing — skipping watcher"

@@ -12,8 +12,14 @@
 
 set -euo pipefail
 
-# Resolve the scaffold root (where this package is installed)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve the scaffold root (follow symlinks to find real package location)
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 export AGENT_SCAFFOLD_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT="$AGENT_SCAFFOLD_ROOT"
 

@@ -14,9 +14,10 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-STATE="$ROOT/.agent/state"
+_MUX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_MUX_ROOT="$(cd "$_MUX_DIR/.." && pwd)"
+# State lives in the project's .agent/ dir, resolved from pwd
+STATE="$(pwd)/.agent/state"
 
 # ── Backend detection ─────────────────────────────────────────────────────────
 

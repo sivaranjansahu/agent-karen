@@ -82,13 +82,16 @@ fi
 echo ""
 echo "▸ Creating runtime directories"
 
-mkdir -p "$SCAFFOLD_ROOT/.agent/inbox"
-mkdir -p "$SCAFFOLD_ROOT/.agent/context"
-mkdir -p "$SCAFFOLD_ROOT/.agent/state"
+# Runtime state lives in the PROJECT, not the scaffold install
+mkdir -p "$PROJECT_DIR/.agent/inbox"
+mkdir -p "$PROJECT_DIR/.agent/context"
+mkdir -p "$PROJECT_DIR/.agent/state"
+mkdir -p "$PROJECT_DIR/.agent/memory"
+mkdir -p "$PROJECT_DIR/.agent/knowledge"
 
 # Initialize communications log if missing
-if [[ ! -f "$SCAFFOLD_ROOT/.agent/communications.md" ]]; then
-  cat > "$SCAFFOLD_ROOT/.agent/communications.md" << EOF
+if [[ ! -f "$PROJECT_DIR/.agent/communications.md" ]]; then
+  cat > "$PROJECT_DIR/.agent/communications.md" << EOF
 # Agent Communications Log
 
 > Session started: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
@@ -110,8 +113,8 @@ echo "  ✓ .agent/ directories ready"
 
 # ── 4. Store project path and scaffold root ───────────────────────────────────
 
-echo "$PROJECT_DIR" > "$SCAFFOLD_ROOT/.agent/state/project_dir"
-echo "$SCAFFOLD_ROOT" > "$SCAFFOLD_ROOT/.agent/state/scaffold_root"
+echo "$PROJECT_DIR" > "$PROJECT_DIR/.agent/state/project_dir"
+echo "$SCAFFOLD_ROOT" > "$PROJECT_DIR/.agent/state/scaffold_root"
 echo "  ✓ Project path stored"
 
 # ── 5. Link knowledge base directories ────────────────────────────────────────
@@ -119,11 +122,11 @@ echo "  ✓ Project path stored"
 if [[ ${#KNOWLEDGE_DIRS[@]} -gt 0 ]]; then
   echo ""
   echo "▸ Linking knowledge base"
-  mkdir -p "$SCAFFOLD_ROOT/.agent/knowledge"
+  mkdir -p "$PROJECT_DIR/.agent/knowledge"
   for KDIR in "${KNOWLEDGE_DIRS[@]}"; do
     KDIR_ABS="$(cd "$KDIR" && pwd)"
     LINK_NAME=$(basename "$KDIR_ABS")
-    ln -sfn "$KDIR_ABS" "$SCAFFOLD_ROOT/.agent/knowledge/$LINK_NAME"
+    ln -sfn "$KDIR_ABS" "$PROJECT_DIR/.agent/knowledge/$LINK_NAME"
     echo "  ✓ Linked: $LINK_NAME → $KDIR_ABS"
   done
 fi
@@ -155,19 +158,16 @@ echo "════════════════════════�
 echo ""
 echo "  Quick start:"
 echo ""
-echo "  # Start the manager agent (from the scaffold directory)"
-echo "  cd $SCAFFOLD_ROOT"
-echo "  ./bootstrap.sh $PROJECT_DIR"
+echo "  # Start the manager agent"
+echo "  karen start $PROJECT_DIR"
 echo ""
-echo "  # Or spawn agents directly"
-echo "  export AGENT_SCAFFOLD_ROOT=$SCAFFOLD_ROOT"
-echo "  ./scripts/spawn.sh pm \"Your task here\" $PROJECT_DIR"
+echo "  # Spawn agents"
+echo "  karen spawn pm \"Your task here\" $PROJECT_DIR"
 echo ""
 echo "  # Check agent health"
-echo "  ./scripts/health.sh"
+echo "  karen health"
 echo ""
 echo "  # Customize roles"
-echo "  # Edit roles/*.md or create project-local roles:"
 echo "  mkdir -p $PROJECT_DIR/.agent-roles"
 echo "  cp $SCAFFOLD_ROOT/roles/pm.md $PROJECT_DIR/.agent-roles/pm.md"
 echo "  # Project-local roles take priority over defaults."
