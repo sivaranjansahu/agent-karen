@@ -1,4 +1,6 @@
 # agent-karen
+<img width="437" height="493" alt="image" src="https://github.com/user-attachments/assets/0511a49e-d551-4e06-a680-937f4250a413" />
+
 
 *"I want to talk to the manager."*
 
