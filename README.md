@@ -1,206 +1,291 @@
 # agent-karen
+
 <img width="437" height="493" alt="image" src="https://github.com/user-attachments/assets/0511a49e-d551-4e06-a680-937f4250a413" />
 
+*keeping your agents on a short leash since 2025.*
 
-*"I want to talk to the manager."*
+will escalate to the manager. will also spawn the manager. will health-check the manager at 2am.
 
-**Multi-agent coordination for Claude Code.** Spawn a team of autonomous AI agents — PM, Dev Lead, developers, QA, CMO, or any custom role — that work in parallel across cmux workspaces. Each agent gets a scoped role definition, a private inbox, persistent task memory ([Beads](https://github.com/steveyegge/beads)), and access to shared context files. Agents communicate through async message passing, delegate subtasks, and produce artifacts — all captured in a full audit trail.
+---
 
-**Who it's for:** Developers building with AI agents who want to move beyond single-agent workflows. If you're using Claude Code and want multiple instances collaborating on the same codebase — planning, building, testing, and reviewing in parallel — this is the coordination layer.
+**Multi-agent coordination for Claude Code.** Spawn a team of autonomous AI agents — PM, Dev Lead, developers, QA, CMO, or any custom role — that work in parallel, each in their own terminal workspace. You talk to the manager. It runs the team.
 
-**Why it matters:** Current AI coding tools run one agent at a time. This scaffold gives you role separation, parallel execution, and structured communication between agents. No orchestration server, no custom SDK — just shell scripts, JSONL inboxes, and markdown files. One bootstrap command sets it up. You talk to the manager; it runs the team.
+No orchestration server. No custom SDK. Shell scripts, JSONL inboxes, and markdown files.
 
-## Architecture
+---
+
+## How it works
 
 ```
 You (human)
-  └─ Manager agent        (workspace 1 — you talk to this one)
-       ├─ PM agent         (workspace 2 — brainstorms product brief)
-       ├─ Dev Lead agent   (workspace 3 — breaks tasks, spawns devs)
-       │    ├─ Dev 1       (workspace 4)
-       │    ├─ Dev 2       (workspace 5)
-       │    └─ Dev N       (workspace N)
-       └─ QA agent         (workspace 6 — validates dev output)
+  └─ Manager agent        ← you talk to this one
+       ├─ PM agent         ← writes the product brief
+       ├─ Dev Lead agent   ← breaks tasks, spawns devs
+       │    ├─ Dev 1
+       │    ├─ Dev 2
+       │    └─ Dev N
+       └─ QA agent         ← validates dev output
 ```
 
-## Key systems
+Each agent gets:
+- A **role definition** (markdown file = `CLAUDE.md`)
+- A **private inbox** (`.agent/inbox/<role>.jsonl`)
+- **Persistent task memory** via [Beads](https://github.com/steveyegge/beads)
+- Access to **shared context files** (`.agent/context/`)
 
-| System | Purpose |
-|--------|---------|
-| **cmux socket** | Spawn workspaces, send commands, notifications |
-| **Beads (`bd`)** | Persistent task memory — survives session resets, multi-agent safe |
-| **Inbox files** | `.agent/inbox/<role>.jsonl` — message queue per agent |
-| **Push trigger** | `cmux send-surface` wakes target terminal after each message |
-| **communications.md** | Append-only log of every inter-agent message and spawn event |
+Every message and spawn is logged to `.agent/communications.md` — a full audit trail of everything the team did.
 
-## Quick start
+---
+
+## Prerequisites
+
+- [Claude Code](https://claude.ai/code) (`npm install -g @anthropic-ai/claude-code`)
+- A terminal multiplexer (see below)
+- Node.js ≥ 16
+- Python 3
+
+### Terminal backend: cmux vs tmux
+
+Karen auto-detects your terminal and picks the best available backend. **The visual experience is very different:**
+
+| | [cmux](https://cmux.com) | [tmux](https://github.com/tmux/tmux) |
+|---|---|---|
+| **Visual** | Each agent gets a **visible tab** — you see all agents side by side, switch with a click | Agents run in **hidden windows** — you switch with `Ctrl-b <number>` |
+| **Notifications** | Native macOS notifications when agents finish | No notifications |
+| **Status bar** | Shows agent role, task status, progress | None |
+| **Install** | macOS only — [cmux.com](https://cmux.com) | Everywhere — `brew install tmux` |
+| **Best for** | Watching agents work in real time | Headless / Linux / WSL |
+
+**Recommendation:** If you're on macOS and want to *see* your agents working in parallel — use cmux. If you're on Linux/WSL or prefer keyboard-driven workflows — tmux works fine, you just navigate between agent windows with `Ctrl-b` + window number.
+
+---
+
+## Install
 
 ```bash
-# Install
 npm install -g agent-karen
-
-# Initialize for your project
-karen init /path/to/your/project
-
-# Talk to the manager
-karen start /path/to/your/project
-# "I want to build a multi-tenant invoicing SaaS. Spawn a PM and let's brainstorm."
 ```
 
-Or without installing:
+---
+
+## Getting Started
+
+Pick the scenario that matches what you want to do.
+
+---
+
+### Use Case 1 — Build something new from scratch
+
+You have an idea. No code yet. You want Karen to spin up a PM, plan the product, then hand off to a dev team.
+
+**Step 1: Initialize Karen for your project**
+
 ```bash
-npx agent-karen init .
+mkdir ~/projects/my-app
+karen init ~/projects/my-app
 ```
+
+You'll see Karen check dependencies, create the `.agent/` directory, and initialize Beads.
+
+**Step 2: Start the manager**
+
+Open tmux, then start Karen:
+
+```bash
+tmux new-session -s agents -n manager
+karen start ~/projects/my-app
+```
+
+Claude Code launches in manager mode. You're now talking to the manager.
+
+**Step 3: Give the manager your idea**
+
+Type your goal directly into Claude:
+
+```
+I want to build a multi-tenant invoicing SaaS for freelancers. MVP only.
+Spawn a PM and let's figure out the scope.
+```
+
+The manager will spawn a PM agent in a new tmux window. Switch to it with `Ctrl+b` then the window number, or watch `.agent/communications.md` for updates.
+
+**Step 4: Answer the PM's questions**
+
+The PM will message the manager with clarifying questions (target users, core features, pricing, etc.). The manager will relay them to you. Answer in the manager terminal.
+
+**Step 5: PM writes the brief — dev team kicks off**
+
+Once you've answered the PM's questions, the PM writes `.agent/context/brief.md` and notifies the manager. The manager then spawns a Dev Lead, who reads the brief, breaks it into tasks, and spawns dev agents.
+
+**Step 6: Monitor progress**
+
+```bash
+# See all agent statuses
+karen health
+
+# Watch the full conversation
+tail -f .agent/communications.md
+
+# See open tasks across all agents
+bd list
+```
+
+**Step 7: Clean up idle agents**
+
+```bash
+karen shutdown --idle 15    # kill agents idle for 15+ minutes
+karen shutdown --all        # shut everything down
+```
+
+---
+
+### Use Case 2 — Add a feature to an existing codebase
+
+You have existing code. You want to implement a specific feature without touching PM planning.
+
+**Step 1: Initialize Karen, pointing it at your docs**
+
+```bash
+karen init ~/projects/my-app --knowledge ~/projects/my-app/docs
+```
+
+The `--knowledge` flag symlinks your docs directory into `.agent/knowledge/` so every agent can read them.
+
+**Step 2: Start the manager**
+
+```bash
+tmux new-session -s agents -n manager
+karen start ~/projects/my-app
+```
+
+**Step 3: Skip PM — go straight to Dev Lead**
+
+Tell the manager exactly what to build:
+
+```
+Skip the PM. Spawn a Dev Lead and tell them to implement Stripe webhook handling
+for invoice payment events. The existing Stripe integration is in src/payments/.
+Use the architecture in docs/. Tests required.
+```
+
+The manager spawns a Dev Lead, who reads the codebase and your knowledge docs, then spawns one or more dev agents to implement in parallel.
+
+**Step 4: Spawn QA when dev signals done**
+
+When the Dev Lead reports completion, ask the manager to bring in QA:
+
+```
+Dev Lead says the Stripe webhooks are done. Spawn a QA agent to validate.
+```
+
+QA reads the code, runs tests, and files a report at `.agent/state/qa_report.md`.
+
+---
+
+### Use Case 3 — Review and harden an existing codebase
+
+You want a security audit and quality review of your existing code, running in parallel.
+
+**Step 1: Initialize Karen**
+
+```bash
+karen init ~/projects/my-app --knowledge ~/projects/my-app/docs
+```
+
+**Step 2: Start the manager and spawn reviewers directly**
+
+```bash
+tmux new-session -s agents -n manager
+karen start ~/projects/my-app
+```
+
+Then tell the manager:
+
+```
+Spawn a Security agent and a QA agent in parallel.
+Security: audit src/ for OWASP Top 10 — focus on auth and API endpoints.
+QA: review test coverage and flag any untested critical paths.
+Both should write their findings to .agent/context/.
+```
+
+**Step 3: Monitor and collect results**
+
+```bash
+karen health                        # both agents should show UP
+tail -f .agent/communications.md    # watch findings come in
+```
+
+Results land in:
+- `.agent/context/security-report.md`
+- `.agent/context/qa-report.md`
+
+**Step 4: Ask the manager to triage**
+
+```
+Security and QA are done. Read their reports and give me a prioritized fix list.
+```
+
+---
 
 ## Commands
 
 ```bash
-karen init <project> [--knowledge <dir>]   # Initialize for a project
-karen start <project>                      # Start the manager agent
-karen spawn <role> "<context>" [dir]       # Spawn an agent
-karen msg <role> "<message>" [type]        # Send a message to an agent
-karen health                              # Check all agents are alive
-karen shutdown <role|--all|--idle N>       # Shut down agents
-karen status                              # Show agent overview
+karen init <project> [--knowledge <dir>]    # Initialize for a project
+karen start <project>                       # Start the manager agent
+karen spawn <role> "<context>" [dir]        # Spawn an agent manually
+karen msg <role> "<message>" [type]         # Send a message to an agent
+karen health                                # Check all agents are alive
+karen shutdown <role|--all|--idle N>        # Shut down agents
+karen status                                # Show agent overview
 ```
+
+---
 
 ## Custom roles
 
-Roles are markdown files that define an agent's behavior. Three-tier lookup:
+Roles are markdown files. Three-tier lookup — highest priority first:
 
-1. **Project-local** (`your-project/.agent-roles/pm.md`) — highest priority
-2. **Custom** (`custom-roles/pm.md` in karen install dir) — your personal overrides
-3. **Defaults** (`roles/pm.md`) — shipped with karen
+1. **Project-local** — `your-project/.agent-roles/pm.md`
+2. **Custom** — `custom-roles/pm.md` in the karen install dir
+3. **Defaults** — `roles/pm.md` shipped with Karen
 
-```bash
-mkdir -p /path/to/your/project/.agent-roles
-cp $(npm root -g)/agent-karen/roles/pm.md /path/to/your/project/.agent-roles/pm.md
-# Edit to fit your domain
-```
-
-## File structure
-
-```
-.
-├── bootstrap.sh                  # Run once to start the manager
-├── .claude/
-│   └── settings.json             # Claude Code Stop hook → cmux notification
-├── .agent/
-│   ├── communications.md         # ← Every inter-agent message logged here
-│   ├── inbox/
-│   │   ├── manager.jsonl
-│   │   ├── pm.jsonl
-│   │   ├── lead.jsonl
-│   │   ├── dev1.jsonl
-│   │   └── qa.jsonl
-│   ├── context/
-│   │   ├── brief.md              # PM writes, everyone reads
-│   │   └── decisions.md          # Architectural decision log
-│   └── state/
-│       ├── manager_surface       # cmux surface IDs (auto-written on spawn)
-│       ├── lead_surface
-│       ├── dev1_result.md        # Dev output summaries
-│       └── qa_report.md          # QA verdict
-├── roles/                        # CLAUDE.md definitions per role
-│   ├── manager.md
-│   ├── pm.md
-│   ├── lead.md
-│   ├── dev.md                    # Used for devN (dev1, dev2, …)
-│   └── qa.md
-├── hooks/
-│   └── notify-done.sh            # Claude Code Stop hook
-└── scripts/
-    ├── spawn.sh                  # Create workspace + launch agent (logs to comms.md)
-    ├── msg.sh                    # Send message + wake terminal (logs to comms.md)
-    └── status.sh                 # Snapshot of all agents
-```
-
-## Scripts
-
-### `./bootstrap.sh [workdir]`
-- Checks cmux socket
-- Installs Beads if not present, runs `bd init`
-- Creates/resets `.agent/communications.md`
-- Registers manager surface
-- Copies `roles/manager.md` → `CLAUDE.md`
-- Launches Claude Code
-
-### `./scripts/spawn.sh <role> "<context>" [workdir]`
-Creates a workspace, writes init message to inbox, logs the spawn to
-`communications.md`, and launches Claude Code with the correct role.
+To customize a role for your project:
 
 ```bash
-./scripts/spawn.sh pm "Build a SaaS for freelance invoicing. MVP first."
-./scripts/spawn.sh lead "Brief ready at .agent/context/brief.md"
-./scripts/spawn.sh dev1 "Implement auth module (bd-a1b2). See brief."
-./scripts/spawn.sh qa "Validate auth + invoice CRUD. Bead IDs: bd-a1b2, bd-c3d4"
+mkdir -p ~/projects/my-app/.agent-roles
+cp $(npm root -g)/agent-karen/roles/pm.md ~/projects/my-app/.agent-roles/pm.md
+# Edit it — it's just markdown
 ```
-
-### `./scripts/msg.sh <role> "<message>" [type]`
-Appends to inbox, logs to `communications.md`, sends push-trigger to wake terminal.
-
-Message types: `message` (default) | `question` | `escalation` | `result` | `unblock`
-
-```bash
-./scripts/msg.sh manager "Brief complete. See .agent/context/brief.md" result
-./scripts/msg.sh lead "Unblock dev1: use Redis for session store" unblock
-./scripts/msg.sh dev2 "Can you also add rate limiting to /api/login?" question
-```
-
-### `./scripts/status.sh`
-Active surfaces, inbox sizes, Beads task summary, recent cmux log.
-
-## Beads quick reference
-
-```bash
-bd quickstart           # orient: open tasks, ready tasks, blockers
-bd list                 # all open issues
-bd ready                # issues with no open blockers (start here)
-bd create "Title" --priority P1 --description "..."
-bd claim <id>           # atomically mark in_progress + assign to self
-bd close <id>           # mark done
-bd link <id> blocks <id2>     # dependency
-bd link <id> relates_to <id2> # related
-bd show <id>            # full detail + audit trail
-bd compact              # summarise old closed issues (keep db light)
-```
-
-Beads stores everything in Git (`.beads/` dir). Multi-agent safe: hash-based
-IDs prevent merge conflicts. Survives session resets — agents pick up where they left off.
-
-## communications.md format
-
-Auto-appended by `msg.sh` and `spawn.sh`. Looks like:
-
-```markdown
-## [2026-03-18 14:22:01 UTC] `manager` → `pm` (spawn)
-
-**Spawned new agent workspace.** Workspace: `ws-abc` · Surface: `sf-xyz`
-
-**Init context:** Build a multi-tenant invoicing SaaS. MVP first.
 
 ---
-
-## [2026-03-18 14:25:10 UTC] `pm` → `manager` (question)
-
-Before I draft the brief, a few questions:
-1. B2B or B2C?
-2. What payment processors do we need to support?
-...
-
----
-
-## [2026-03-18 14:31:45 UTC] `manager` → `pm` (message)
-
-B2B. Stripe only for now.
-
----
-```
 
 ## Tips
 
-- **Start small**: manager → PM → lead → 1 dev. Scale once the pattern works.
-- **Audit trail**: `cat .agent/communications.md` for the full story.
-- **Task state**: `bd list` from any workspace — shared via git.
-- **After cmux restart**: run `bootstrap.sh` again to re-register surface IDs.
-- **Longer sessions**: tell agents to run `bd quickstart` at the start to re-orient.
+- **Start small.** Manager → Dev Lead → 1 dev. Scale once the pattern works.
+- **Audit trail.** `cat .agent/communications.md` for the full story of what every agent did.
+- **Task state.** `bd list` from any workspace — Beads is shared via git.
+- **Context window.** Long-running agents accumulate history. Shut down and respawn with a summary context for very long tasks.
+- **Auto-cleanup.** Set `AUTO_SHUTDOWN_MINS=15` to automatically reap idle agents after 15 minutes.
+- **Respawn anytime.** State is preserved on disk. `karen spawn pm "Resume. Check inbox and bd quickstart."` picks up where it left off.
+
+---
+
+## Default roles
+
+| Role | What it does |
+|------|-------------|
+| `manager` | Orchestrates the team. Delegates everything. Talks to you. |
+| `pm` | Clarifies the vision. Writes the product brief. |
+| `lead` | Tech lead. Designs architecture. Assigns and monitors dev tasks. |
+| `dev` | Implements features. Writes tests. Used for `dev1`, `dev2`, etc. |
+| `qa` | Tests features. Files bug reports. Approves releases. |
+| `security` | Audits code. Finds vulnerabilities. |
+| `ux` | Designs UI/UX. Writes specs. |
+| `cmo` | Writes copy. Handles positioning and marketing. |
+
+---
+
+## Learn more
+
+- [Full product spec](.agent/context/agent-karen-spec.md) — architecture, file protocol, lifecycle, all commands
+- [GitHub](https://github.com/sivaranjansahu/agent-karen)
