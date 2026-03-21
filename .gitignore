@@ -1,4 +1,32 @@
+# Runtime state — generated per session, not part of the scaffold
+.agent/communications.md
+.agent/inbox/*.jsonl
+.agent/state/*
+!.agent/state/.gitkeep
+.agent/context/*
+!.agent/context/.gitkeep
+.agent/memory/*
+!.agent/memory/.gitkeep
+!.agent/memory/shared.md
+.agent/knowledge/*
+!.agent/knowledge/.gitkeep
 
-# Dolt database files (added by bd init)
+# Dolt database files (beads)
 .dolt/
 *.db
+
+# Mattermost runtime state
+.agent/state/mattermost.env
+.agent/state/mm_channel_*
+
+# OS junk
+.DS_Store
+
+# Session-specific Claude settings (permissions log)
+.claude/settings.local.json
+
+# Custom roles (user-specific, not shipped)
+custom-roles/
+
+# Generated at runtime by bootstrap/spawn
+CLAUDE.md

@@ -1,0 +1,45 @@
+{
+  "name": "agent-karen",
+  "version": "0.1.0",
+  "description": "Multi-agent coordination for Claude Code. Spawn autonomous AI agents that collaborate via roles, inboxes, and shared memory.",
+  "keywords": [
+    "claude-code",
+    "multi-agent",
+    "ai-agents",
+    "cmux",
+    "tmux",
+    "orchestration",
+    "claude",
+    "anthropic",
+    "hive"
+  ],
+  "license": "MIT",
+  "author": "Sivaranjan Sahu",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sivaranjansahu/agent-karen"
+  },
+  "bin": {
+    "karen": "./bin/cli.sh"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "roles/",
+    "scripts/",
+    "hooks/",
+    "init.sh",
+    "bootstrap.sh",
+    ".agent/memory/shared.md",
+    ".agent/inbox/.gitkeep",
+    ".agent/context/.gitkeep",
+    ".agent/state/.gitkeep",
+    ".agent/knowledge/.gitkeep",
+    ".agent/memory/.gitkeep",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  }
+}
