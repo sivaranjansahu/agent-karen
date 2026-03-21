@@ -30,7 +30,8 @@ for ws_file in "$STATE"/*_workspace; do
   [[ -f "$SF_FILE" ]] && SF_ID=$(cat "$SF_FILE")
 
   # Check if workspace exists in active list
-  if echo "$ACTIVE_WS" | grep -q "$WS_ID"; then
+  # Match by workspace ID (cmux: workspace:N) or role name (tmux: window name)
+  if echo "$ACTIVE_WS" | grep -qE "$WS_ID|$ROLE"; then
     STATUS="UP"
   else
     STATUS="DOWN"

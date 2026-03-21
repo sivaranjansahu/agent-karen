@@ -105,7 +105,7 @@ _cmux_notify() {
 
 _ensure_tmux_session() {
   if ! tmux has-session -t agents 2>/dev/null; then
-    tmux new-session -d -s agents -n orchestrator
+    tmux new-session -d -s agents -n manager
   fi
 }
 
@@ -123,6 +123,10 @@ _tmux_spawn() {
   echo "$WIN_IDX" > "$STATE/${NAME}_workspace"
   echo "tmux:agents:$NAME" > "$STATE/${NAME}_surface"
 
+  # Show user how to view the agent
+  echo ""
+  echo "  View $NAME:  Ctrl-b $WIN_IDX  (or: tmux select-window -t agents:$NAME)"
+
   echo "agents:$NAME $WIN_IDX"
 }
 
@@ -134,7 +138,8 @@ _tmux_send() {
 
 _tmux_list() {
   _ensure_tmux_session
-  tmux list-windows -t agents -F '  #{window_name}  #{window_index}  #{?window_active,* ,  }' 2>/dev/null
+  echo "  tmux session: agents (switch: Ctrl-b <window#>)"
+  tmux list-windows -t agents -F '  #{window_index}: #{window_name}  #{?window_active,[active],}' 2>/dev/null
 }
 
 _tmux_close() {

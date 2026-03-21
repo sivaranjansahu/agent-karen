@@ -140,7 +140,7 @@ if raw.strip():
     WS_ID=$(cmux list-workspaces 2>/dev/null | grep '\[selected\]' | grep -oE 'workspace:[0-9]+' || echo "")
   fi
 elif [[ "$BACKEND" == "tmux" ]]; then
-  WS_ID="agents:orchestrator"
+  WS_ID="agents:manager"
 fi
 
 if [[ -n "$WS_ID" ]]; then
