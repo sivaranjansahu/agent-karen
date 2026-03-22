@@ -17,10 +17,10 @@ for arg in "$@"; do
   fi
 done
 
-# Build claude flags: broad allow but keep deny rules for safety
+# Build claude flags
 CLAUDE_FLAGS=""
 if $SKIP_PERMS; then
-  CLAUDE_FLAGS='--allowedTools "Bash(*)" "Read" "Write" "Edit" "Glob" "Grep" "WebSearch" "WebFetch" "NotebookEdit"'
+  CLAUDE_FLAGS="--dangerously-skip-permissions"
 fi
 
 # Permission mode stored after .agent/ dirs are created (see below)
