@@ -17,30 +17,47 @@ command -v cmux &>/dev/null && HAS_CMUX=true
 command -v tmux &>/dev/null && HAS_TMUX=true
 
 if $HAS_CMUX; then
-  echo "  ✓ cmux detected — best experience, visual agent tabs"
+  echo "  ✓ cmux detected — visual tabs, notifications, the works."
+  echo "    Karen approves."
 elif $HAS_TMUX; then
-  echo "  ✓ tmux detected"
+  echo "  ✓ tmux detected — it'll work, but Karen's not impressed."
   echo ""
-  echo "  For the best experience (visual tabs, notifications, status bar):"
+  echo "    tmux hides your agents in background windows."
+  echo "    cmux gives you visual tabs — see all your agents at once."
+  echo ""
   if [[ "$(uname)" == "Darwin" ]]; then
-    echo "    brew install --cask cmux    # https://cmux.com"
+    echo "    Upgrade your experience:"
+    echo "      brew install --cask cmux    # https://cmux.com"
   else
-    echo "    cmux is macOS only — tmux works fine for Linux/WSL"
+    echo "    cmux is macOS only — tmux is your best option on Linux/WSL."
+    echo "    Karen will make it work."
   fi
 else
-  echo "  ⚠ No terminal multiplexer found. You need one to run agents."
   echo ""
+  echo "  ┌─────────────────────────────────────────────────────────┐"
+  echo "  │                                                         │"
+  echo "  │   Karen needs a terminal multiplexer to manage agents.  │"
+  echo "  │                                                         │"
+  echo "  │   Without one, she can't spawn anyone. And she WILL     │"
+  echo "  │   complain about it.                                    │"
+  echo "  │                                                         │"
+  echo "  │   Pick one:                                             │"
+  echo "  │                                                         │"
   if [[ "$(uname)" == "Darwin" ]]; then
-    echo "  Recommended (visual tabs, click to switch between agents):"
-    echo "    brew install --cask cmux    # https://cmux.com"
-    echo ""
-    echo "  Or universal (keyboard-driven, Ctrl-b to switch):"
-    echo "    brew install tmux"
+    echo "  │   RECOMMENDED (visual tabs, click to switch agents):   │"
+    echo "  │     brew install --cask cmux                           │"
+    echo "  │                                                        │"
+    echo "  │   ALSO WORKS (keyboard-driven, Ctrl-b to switch):      │"
+    echo "  │     brew install tmux                                  │"
   else
-    echo "  Install tmux:"
-    echo "    sudo apt install tmux       # Debian/Ubuntu"
-    echo "    brew install tmux           # macOS"
+    echo "  │   INSTALL:                                             │"
+    echo "  │     sudo apt install tmux       # Debian/Ubuntu        │"
+    echo "  │     brew install tmux           # macOS                │"
   fi
+  echo "  │                                                         │"
+  echo "  │   Then come back. Karen will be waiting.                │"
+  echo "  │                                                         │"
+  echo "  └─────────────────────────────────────────────────────────┘"
 fi
 
 echo ""
