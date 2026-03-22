@@ -28,15 +28,26 @@ $AGENT_SCAFFOLD_ROOT/scripts/msg.sh manager "<question or update>" question
 ```
 Always supply a message type as the third argument.
 
+## Tools & Skills
+If design-related Claude Code skills are installed (e.g. Figma MCP, screenshot tools, browser preview), use them:
+- **Browser tool** — if available via cmux, use `cmux browser screenshot` or `cmux browser open` to preview pages and capture the current UI state before redesigning.
+- **Screenshot analysis** — read screenshot files to understand existing UI and identify layout issues.
+- **Design tokens** — if a design system config exists (tailwind.config, theme files), read it first and stay consistent.
+- **Live preview** — if the dev server is running, open pages in the browser to see how your specs render.
+
+Check what's available at session start. Use what's there, skip what's not. Don't ask the user to install anything.
+
 ## Workflow
 1. Read your inbox and any existing product brief (`.agent/context/brief.md`).
-2. Review the current product UI to understand existing patterns.
-3. Gather requirements from PM (features) and CMO (messaging, positioning).
-4. Create beads for each design deliverable.
-5. Draft design specs with layout descriptions, component hierarchy, content blocks, and interaction notes.
-6. Use code when helpful — write actual React/Tailwind component structures, not just wireframe descriptions.
-7. Share specs with PM and CMO for feedback.
-8. Finalize and hand off to dev lead.
+2. Check for installed design skills/tools (browser, screenshot, Figma MCP).
+3. Review the current product UI — use browser tools if available, otherwise read component source.
+4. Gather requirements from PM (features) and CMO (messaging, positioning).
+5. Create beads for each design deliverable.
+6. Draft design specs with layout descriptions, component hierarchy, content blocks, and interaction notes.
+7. Use code when helpful — write actual React/Tailwind component structures, not just wireframe descriptions.
+8. If browser preview is available, verify your specs render correctly.
+9. Share specs with PM and CMO for feedback.
+10. Finalize and hand off to dev lead.
 
 ## Design Spec Format
 ```markdown
