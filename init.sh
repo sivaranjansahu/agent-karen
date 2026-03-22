@@ -142,7 +142,128 @@ if command -v bd &>/dev/null; then
   fi
 fi
 
-# ── 6. Make scripts executable ────────────────────────────────────────────────
+# ── 7. Set up Claude Code permissions ─────────────────────────────────────────
+
+echo ""
+echo "▸ Setting up permissions"
+
+CLAUDE_DIR="$PROJECT_DIR/.claude"
+SETTINGS_FILE="$CLAUDE_DIR/settings.json"
+mkdir -p "$CLAUDE_DIR"
+
+if [[ -f "$SETTINGS_FILE" ]]; then
+  # Merge: add karen permissions to existing settings using python
+  python3 -c "
+import json, sys
+
+karen_perms = {
+    'allow': [
+        'Read', 'Edit', 'Write', 'Glob', 'Grep', 'NotebookEdit',
+        'Bash(git status *)', 'Bash(git diff *)', 'Bash(git log *)',
+        'Bash(git show *)', 'Bash(git branch *)', 'Bash(git blame *)',
+        'Bash(git stash *)', 'Bash(git add *)', 'Bash(git commit *)',
+        'Bash(bd *)', 'Bash(karen *)',
+        'Bash(npm run *)', 'Bash(npm test *)', 'Bash(npm install *)', 'Bash(npx *)',
+        'Bash(node *)', 'Bash(python3 *)',
+        'Bash(ls *)', 'Bash(cat *)', 'Bash(head *)', 'Bash(tail *)',
+        'Bash(wc *)', 'Bash(sort *)', 'Bash(mkdir *)', 'Bash(cp *)',
+        'Bash(mv *)', 'Bash(touch *)', 'Bash(chmod *)', 'Bash(which *)',
+        'Bash(echo *)', 'Bash(date *)', 'Bash(curl *)', 'Bash(jq *)',
+        'Bash(tsc *)', 'Bash(eslint *)', 'Bash(prettier *)'
+    ],
+    'deny': [
+        'Bash(git push *)', 'Bash(git reset --hard *)', 'Bash(git clean *)',
+        'Bash(git branch -D *)', 'Bash(git push --force *)',
+        'Bash(rm -rf *)', 'Bash(sudo *)'
+    ]
+}
+
+with open('$SETTINGS_FILE', 'r') as f:
+    settings = json.load(f)
+
+perms = settings.setdefault('permissions', {})
+existing_allow = set(perms.get('allow', []))
+existing_deny = set(perms.get('deny', []))
+
+# Add karen permissions (don't duplicate)
+for p in karen_perms['allow']:
+    existing_allow.add(p)
+for p in karen_perms['deny']:
+    existing_deny.add(p)
+
+perms['allow'] = sorted(existing_allow)
+perms['deny'] = sorted(existing_deny)
+
+with open('$SETTINGS_FILE', 'w') as f:
+    json.dump(settings, f, indent=2)
+    f.write('\n')
+" 2>/dev/null && echo "  ✓ Merged karen permissions into existing .claude/settings.json" || \
+    echo "  ⚠ Could not merge permissions — check .claude/settings.json manually"
+else
+  # Create fresh settings with karen permissions
+  cat > "$SETTINGS_FILE" << 'PERMS'
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "NotebookEdit",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git branch *)",
+      "Bash(git blame *)",
+      "Bash(git stash *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(bd *)",
+      "Bash(karen *)",
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(npm install *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(python3 *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(sort *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(touch *)",
+      "Bash(chmod *)",
+      "Bash(which *)",
+      "Bash(echo *)",
+      "Bash(date *)",
+      "Bash(curl *)",
+      "Bash(jq *)",
+      "Bash(tsc *)",
+      "Bash(eslint *)",
+      "Bash(prettier *)"
+    ],
+    "deny": [
+      "Bash(git push *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean *)",
+      "Bash(git branch -D *)",
+      "Bash(git push --force *)",
+      "Bash(rm -rf *)",
+      "Bash(sudo *)"
+    ]
+  }
+}
+PERMS
+  echo "  ✓ Created .claude/settings.json with safe default permissions"
+fi
+
+# ── 8. Make scripts executable ────────────────────────────────────────────────
 
 chmod +x "$SCAFFOLD_ROOT/bootstrap.sh" "$SCAFFOLD_ROOT/init.sh" 2>/dev/null
 chmod +x "$SCAFFOLD_ROOT/scripts/"*.sh 2>/dev/null
