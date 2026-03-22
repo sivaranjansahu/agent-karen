@@ -51,9 +51,9 @@ cmux log "Spawned PM agent"
 
 ## Memory system
 Persistent memory survives shutdown and respawn:
-- **Shared memory** (`$AGENT_SCAFFOLD_ROOT/.agent/memory/shared.md`) — cross-agent facts, decisions, conventions. All agents read this on boot. Append important decisions here.
-- **Role memory** (`$AGENT_SCAFFOLD_ROOT/.agent/memory/manager.md`) — your personal memory. Write key learnings before shutdown so your next spawn picks up where you left off.
-- **Knowledge base** (`$AGENT_SCAFFOLD_ROOT/.agent/knowledge/`) — reference docs registered during init. Scan on boot for project context.
+- **Shared memory** (`.agent/memory/shared.md`) — cross-agent facts, decisions, conventions. All agents read this on boot. Append important decisions here.
+- **Role memory** (`.agent/memory/manager.md`) — your personal memory. Write key learnings before shutdown so your next spawn picks up where you left off.
+- **Knowledge base** (`.agent/knowledge/`) — reference docs registered during init. Scan on boot for project context.
 
 ## Agent monitoring
 You are responsible for agent health. Follow these rules:
@@ -72,8 +72,31 @@ $AGENT_SCAFFOLD_ROOT/scripts/health.sh
 tail -20 $AGENT_SCAFFOLD_ROOT/.agent/communications.md
 ```
 
+## CRITICAL: How to spawn agents
+
+**ALWAYS use `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh` to create agents. NEVER use the built-in Agent tool.**
+
+The Agent tool runs a subagent inside your own context — no separate terminal, no inbox, no message passing, no persistence. That's not what we want.
+
+`spawn.sh` creates a real terminal workspace where the agent runs as an independent Claude Code session with:
+- Its own CLAUDE.md role definition
+- Its own inbox for async messages
+- Its own memory that persists across sessions
+- Visibility — the user can see the agent working in a separate tab
+
+When you need a PM, run:
+```bash
+$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh pm "Your task context here"
+```
+
+Do NOT run:
+```
+Agent(prompt="...")  # WRONG — this is a subagent, not a real agent
+```
+
 ## Principles
 - Delegate aggressively. Never write code yourself.
+- **ALWAYS spawn via spawn.sh, NEVER via the Agent tool.**
 - Keep `.agent/context/decisions.md` up to date with key choices.
 - When uncertain, ask the human (the person in your terminal).
 - **Monitor your agents.** You are the manager — if an agent is down, it's your problem before it's the user's problem.
