@@ -666,6 +666,57 @@ test_cli_commands() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+# TEST 9: Inbox polling hook
+# ═══════════════════════════════════════════════════════════════════════
+
+test_inbox_polling_hook() {
+  echo "── Test 9: Inbox polling hook ──"
+
+  "$SCAFFOLD_ROOT/init.sh" "$PROJECT_A" >/dev/null 2>&1
+
+  # Symlink hooks to project
+  ln -sfn "$SCAFFOLD_ROOT/hooks" "$PROJECT_A/.agent/hooks"
+
+  mkdir -p "$PROJECT_A/.agent/state" "$PROJECT_A/.agent/inbox"
+
+  # No messages yet — hook should be silent
+  # Remove any leftover inbox from prior tests
+  rm -f "$PROJECT_A/.agent/inbox/pm.jsonl"
+  rm -f "$PROJECT_A/.agent/state/pm_inbox_cursor"
+  local output
+  output=$(cd "$PROJECT_A" && AGENT_ROLE=pm "$SCAFFOLD_ROOT/hooks/check-inbox.sh" 2>&1)
+  assert_eq "no messages = silent" "" "$output"
+
+  # Add a message
+  echo '{"from":"manager","type":"message","ts":"2026-01-01T00:00:00Z","body":"Write the brief"}' > "$PROJECT_A/.agent/inbox/pm.jsonl"
+
+  output=$(cd "$PROJECT_A" && AGENT_ROLE=pm "$SCAFFOLD_ROOT/hooks/check-inbox.sh" 2>&1)
+  assert_contains "shows new message" "$output" "1 new message"
+  assert_contains "shows body" "$output" "Write the brief"
+  assert_contains "shows sender" "$output" "manager"
+
+  # Cursor should be updated — running again should show nothing new
+  output=$(cd "$PROJECT_A" && AGENT_ROLE=pm "$SCAFFOLD_ROOT/hooks/check-inbox.sh" 2>&1)
+  assert_eq "no new messages after cursor update" "" "$output"
+
+  # Add another message — should show only the new one
+  echo '{"from":"lead","type":"question","ts":"2026-01-01T00:01:00Z","body":"Need clarification on scope"}' >> "$PROJECT_A/.agent/inbox/pm.jsonl"
+
+  output=$(cd "$PROJECT_A" && AGENT_ROLE=pm "$SCAFFOLD_ROOT/hooks/check-inbox.sh" 2>&1)
+  assert_contains "shows only new message" "$output" "1 new message"
+  assert_contains "shows new body" "$output" "Need clarification"
+
+  # Verify cursor file exists
+  assert_file_exists "cursor file" "$PROJECT_A/.agent/state/pm_inbox_cursor"
+  local cursor
+  cursor=$(cat "$PROJECT_A/.agent/state/pm_inbox_cursor")
+  assert_eq "cursor at line 2" "2" "$cursor"
+
+  echo "  ✓ Inbox polling works"
+  echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 # RUNNER
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -686,6 +737,7 @@ main() {
   test_message_integrity
   test_respawn_continuity
   test_cli_commands
+  test_inbox_polling_hook
 
   teardown
 
