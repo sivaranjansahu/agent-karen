@@ -164,6 +164,7 @@ karen_perms = {
         'Bash(git stash *)', 'Bash(git add *)', 'Bash(git commit *)',
         'Bash(bd *)', 'Bash(karen *)',
         'Bash(cmux *)', 'Bash(tmux *)',
+        'Bash(.agent/scripts/*)',
         'Bash($SCAFFOLD_ROOT/scripts/*)',
         'Bash(sleep *)',
         'Bash(npm run *)', 'Bash(npm test *)', 'Bash(npm install *)', 'Bash(npx *)',
@@ -230,6 +231,7 @@ else
       "Bash(karen *)",
       "Bash(cmux *)",
       "Bash(tmux *)",
+      "Bash(.agent/scripts/*)",
       "Bash(sleep *)",
       "Bash(npm run *)",
       "Bash(npm test *)",
@@ -299,6 +301,10 @@ with open('$SETTINGS_FILE', 'w') as f:
     f.write('\n')
 " 2>/dev/null
 echo "  ✓ Whitelisted scaffold scripts path"
+
+# Create symlinks in project so agents can find scripts without $AGENT_SCAFFOLD_ROOT
+ln -sfn "$SCAFFOLD_ROOT/scripts" "$PROJECT_DIR/.agent/scripts"
+echo "  ✓ Linked .agent/scripts → scaffold"
 
 # ── 8. Make scripts executable ────────────────────────────────────────────────
 

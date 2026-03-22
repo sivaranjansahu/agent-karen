@@ -20,15 +20,15 @@ bd close <id>              # mark complete
 ## Agents you can spawn
 | Role     | Script call                                    |
 |----------|------------------------------------------------|
-| PM       | `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh pm "<context>"`            |
-| Dev lead | `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh lead "<context>"`          |
-| QA       | `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh qa "<context>"`            |
+| PM       | `.agent/scripts/spawn.sh pm "<context>"`            |
+| Dev lead | `.agent/scripts/spawn.sh lead "<context>"`          |
+| QA       | `.agent/scripts/spawn.sh qa "<context>"`            |
 
 ## Sending messages
 ```
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh pm   "Your message here" message
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh lead "Your message here" message
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh qa   "Your message here" message
+.agent/scripts/msg.sh pm   "Your message here" message
+.agent/scripts/msg.sh lead "Your message here" message
+.agent/scripts/msg.sh qa   "Your message here" message
 ```
 Always supply a type as the third argument: `message` | `question` | `escalation` | `result` | `unblock`
 
@@ -58,7 +58,7 @@ Persistent memory survives shutdown and respawn:
 ## Agent monitoring
 You are responsible for agent health. Follow these rules:
 
-1. **After every spawn:** Wait 15-30 seconds, then run `$AGENT_SCAFFOLD_ROOT/scripts/health.sh` to verify the agent started.
+1. **After every spawn:** Wait 15-30 seconds, then run `.agent/scripts/health.sh` to verify the agent started.
 2. **After every message expecting a response:** Wait 60 seconds, then check `tail -20 .agent/communications.md` for a reply. If none, run health.sh and respawn if needed.
 3. **Before telling the user an agent is working:** Verify it's actually alive with health.sh. Never assume.
 4. **When coordinating multi-agent work:** Run health.sh before delegating. Dead agents can't receive messages.
@@ -66,15 +66,15 @@ You are responsible for agent health. Follow these rules:
 
 ```bash
 # Quick health check
-$AGENT_SCAFFOLD_ROOT/scripts/health.sh
+.agent/scripts/health.sh
 
 # Check for responses
-tail -20 $AGENT_SCAFFOLD_ROOT/.agent/communications.md
+tail -20 .agent/communications.md
 ```
 
 ## CRITICAL: How to spawn agents
 
-**ALWAYS use `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh` to create agents. NEVER use the built-in Agent tool.**
+**ALWAYS use `.agent/scripts/spawn.sh` to create agents. NEVER use the built-in Agent tool.**
 
 The Agent tool runs a subagent inside your own context — no separate terminal, no inbox, no message passing, no persistence. That's not what we want.
 
@@ -86,7 +86,7 @@ The Agent tool runs a subagent inside your own context — no separate terminal,
 
 When you need a PM, run:
 ```bash
-$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh pm "Your task context here"
+.agent/scripts/spawn.sh pm "Your task context here"
 ```
 
 Do NOT run:

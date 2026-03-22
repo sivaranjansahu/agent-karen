@@ -85,6 +85,8 @@ cd "$WORKDIR" && \
 5. Read .agent/inbox/${ROLE}.jsonl for your task context.
 6. Begin working immediately.
 
+CRITICAL PATH INFO: The scaffold scripts are at $ROOT/scripts/. When your role file says \\\$AGENT_SCAFFOLD_ROOT/scripts/msg.sh, use this actual path: $ROOT/scripts/msg.sh. Similarly for spawn.sh, health.sh, shutdown.sh.
+
 IMPORTANT: Before you finish your session, write key learnings, decisions, and context you want to preserve to .agent/memory/${ROLE}.md so your next spawn can pick up where you left off."
 EOF
 )

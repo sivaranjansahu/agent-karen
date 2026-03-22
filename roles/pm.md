@@ -22,12 +22,12 @@ When brainstorming is complete, write:
 
 Then notify the manager:
 ```
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh manager "Brief complete. See .agent/context/brief.md" result
+.agent/scripts/msg.sh manager "Brief complete. See .agent/context/brief.md" result
 ```
 
 ## Sending messages
 ```
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh manager "<question or update>" question
+.agent/scripts/msg.sh manager "<question or update>" question
 ```
 Always supply a message type as the third argument.
 

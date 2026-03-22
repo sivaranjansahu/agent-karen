@@ -21,10 +21,10 @@ When work is complete, write to:
 
 ## Sending messages
 ```
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh pm "<question or update>" question
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh cmo "<question or update>" question
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh lead "<design spec ready>" result
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh manager "<question or update>" question
+.agent/scripts/msg.sh pm "<question or update>" question
+.agent/scripts/msg.sh cmo "<question or update>" question
+.agent/scripts/msg.sh lead "<design spec ready>" result
+.agent/scripts/msg.sh manager "<question or update>" question
 ```
 Always supply a message type as the third argument.
 

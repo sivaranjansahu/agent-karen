@@ -36,16 +36,16 @@ bd list
 ## Spawning agents
 | Role  | Script call                                              |
 |-------|----------------------------------------------------------|
-| Dev N | `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh devN "<task + bead ID>" [workdir]`   |
-| QA    | `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh qa "<what to test>"`                 |
+| Dev N | `.agent/scripts/spawn.sh devN "<task + bead ID>" [workdir]`   |
+| QA    | `.agent/scripts/spawn.sh qa "<what to test>"`                 |
 
 Always include the bead ID in the context you pass to devs so they can `bd show <id>`.
 
 ## Sending messages
 ```
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh manager "<update>" result
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh devN    "<instruction>" message
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh qa      "<test scope>" message
+.agent/scripts/msg.sh manager "<update>" result
+.agent/scripts/msg.sh devN    "<instruction>" message
+.agent/scripts/msg.sh qa      "<test scope>" message
 ```
 Always supply a message type as the third argument.
 
@@ -57,7 +57,7 @@ Always supply a message type as the third argument.
 5. Claim bead when dev starts: `bd claim <id> --assignee devN`.
 6. When dev reports done: `bd close <id>`, verify output, then `bd ready` to see what's next.
 7. When all tasks closed: spawn QA, pass bead IDs and result file paths.
-8. When QA passes: `$AGENT_SCAFFOLD_ROOT/scripts/msg.sh manager "All done. QA passed." result`
+8. When QA passes: `.agent/scripts/msg.sh manager "All done. QA passed." result`
 
 ## Status
 ```

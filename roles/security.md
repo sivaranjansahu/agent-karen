@@ -20,9 +20,9 @@ When work is complete, write to:
 
 ## Sending messages
 ```
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh lead "<finding or recommendation>" result
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh pm "<risk assessment or question>" question
-$AGENT_SCAFFOLD_ROOT/scripts/msg.sh manager "<escalation>" escalation
+.agent/scripts/msg.sh lead "<finding or recommendation>" result
+.agent/scripts/msg.sh pm "<risk assessment or question>" question
+.agent/scripts/msg.sh manager "<escalation>" escalation
 ```
 Always supply a message type as the third argument.
 
