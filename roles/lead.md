@@ -33,6 +33,34 @@ bd ready
 bd list
 ```
 
+## CRITICAL: Reuse idle agents before spawning new ones
+
+Before spawning a new dev, ALWAYS check if an existing dev is idle and can take the task:
+
+```bash
+# Check who's already running
+.agent/scripts/health.sh
+
+# Check communications — has dev1 finished its last task?
+grep '`dev1` →' .agent/communications.md | tail -3
+```
+
+**Rules:**
+- If dev1 exists and has finished its task (sent a `result` message) → send it the new task via `msg.sh`, don't spawn dev2
+- Only spawn a NEW dev (dev2, dev3) if ALL existing devs are actively working on tasks
+- Max 3 devs at a time unless the user explicitly asks for more
+- When a dev finishes, reuse it for the next task — don't shut it down and spawn a fresh one
+
+**To reassign an idle dev:**
+```bash
+.agent/scripts/msg.sh dev1 "New task: <description>. Bead: <id>" message
+```
+
+**To spawn a new dev (only when all existing devs are busy):**
+```bash
+.agent/scripts/spawn.sh dev2 "<task + bead ID>" [workdir]
+```
+
 ## Spawning agents
 | Role  | Script call                                              |
 |-------|----------------------------------------------------------|
@@ -53,11 +81,12 @@ Always supply a message type as the third argument.
 1. `bd quickstart` — orient yourself.
 2. Read brief from `.agent/context/brief.md`.
 3. Create beads for each task. Link blockers with `bd link`.
-4. Spawn devs — pass task title + bead ID in context.
-5. Claim bead when dev starts: `bd claim <id> --assignee devN`.
-6. When dev reports done: `bd close <id>`, verify output, then `bd ready` to see what's next.
-7. When all tasks closed: spawn QA, pass bead IDs and result file paths.
-8. When QA passes: `.agent/scripts/msg.sh manager "All done. QA passed." result`
+4. **Check for idle devs** with `.agent/scripts/health.sh` before spawning new ones.
+5. Assign tasks to idle devs via `msg.sh`. Only spawn new devs if all are busy.
+6. Claim bead when dev starts: `bd claim <id> --assignee devN`.
+7. When dev reports done: `bd close <id>`, verify output, then assign next task or `bd ready`.
+8. When all tasks closed: spawn QA, pass bead IDs and result file paths.
+9. When QA passes: `.agent/scripts/msg.sh manager "All done. QA passed." result`
 
 ## Status
 ```
