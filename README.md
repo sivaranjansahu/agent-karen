@@ -4,7 +4,7 @@
 
 *keeping your agents on a short leash since 2025.*
 
-will escalate to the manager. will also spawn the manager. will health-check the manager at 2am.
+Will escalate to the manager. Will file a ticket for it, and keep spawning and killing agents until it is closed. Karen don't quit.
 
 ---
 
@@ -239,6 +239,18 @@ karen shutdown <role|--all|--idle N>        # Shut down agents
 karen status                                # Show agent overview
 ```
 
+### Skip permission prompts
+
+Agents will ask for approval on bash commands by default. To skip all prompts:
+
+```bash
+karen start --dangerously-skip-permissions ~/projects/my-app
+```
+
+Spawned agents inherit this automatically — set it once on the manager, the whole team runs without prompts.
+
+**What's actually happening:** Karen translates this into `--allowedTools "Bash(*)"` but keeps your deny rules active. So `git push`, `rm -rf`, and `sudo` are still blocked. It's "skip the annoying prompts" not "skip all safety."
+
 ---
 
 ## Custom roles
@@ -256,6 +268,29 @@ mkdir -p ~/projects/my-app/.agent-roles
 cp $(npm root -g)/agent-karen/roles/pm.md ~/projects/my-app/.agent-roles/pm.md
 # Edit it — it's just markdown
 ```
+
+---
+
+## Memory system
+
+Agents have persistent memory that survives shutdown and respawn:
+
+- **Shared memory** (`.agent/memory/shared.md`) — cross-agent facts and decisions. All agents read this on boot.
+- **Role memory** (`.agent/memory/{role}.md`) — per-agent memory. Agents write key learnings here before shutdown so the next spawn picks up where they left off.
+- **Knowledge base** (`.agent/knowledge/`) — reference docs symlinked during `karen init --knowledge`.
+
+Agents are reminded to save memory on shutdown. Memory files persist in the project's `.agent/` directory.
+
+---
+
+## Permissions
+
+`karen init` sets up safe default permissions in your project's `.claude/settings.json`:
+
+- **Allowed:** Read, Write, Edit, git (safe ops), npm, node, python3, shell utilities, cmux/tmux, beads
+- **Denied:** `git push`, `git reset --hard`, `rm -rf`, `sudo` — these always require manual approval
+
+Re-running `karen init` merges new permissions without overwriting your custom rules.
 
 ---
 
