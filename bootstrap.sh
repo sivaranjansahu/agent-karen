@@ -6,7 +6,18 @@
 
 set -euo pipefail
 
-WORKDIR="${1:-$(pwd)}"
+# Parse --dangerously-skip-permissions flag
+SKIP_PERMS=""
+ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == "--dangerously-skip-permissions" ]]; then
+    SKIP_PERMS="--dangerously-skip-permissions"
+  else
+    ARGS+=("$arg")
+  fi
+done
+
+WORKDIR="${ARGS[0]:-$(pwd)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "╔══════════════════════════════════════════╗"
@@ -182,4 +193,4 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 cd "$WORKDIR"
-exec claude
+exec claude $SKIP_PERMS

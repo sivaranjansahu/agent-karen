@@ -10,9 +10,20 @@
 
 set -euo pipefail
 
-ROLE="${1:?Usage: spawn.sh <role> \"<context>\" [working_dir]}"
-CONTEXT="${2:-}"
-WORKDIR="${3:-$(pwd)}"
+# Parse --dangerously-skip-permissions flag
+SKIP_PERMS=""
+ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == "--dangerously-skip-permissions" ]]; then
+    SKIP_PERMS="--dangerously-skip-permissions"
+  else
+    ARGS+=("$arg")
+  fi
+done
+
+ROLE="${ARGS[0]:?Usage: spawn.sh [--dangerously-skip-permissions] <role> \"<context>\" [working_dir]}"
+CONTEXT="${ARGS[1]:-}"
+WORKDIR="${ARGS[2]:-$(pwd)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 AGENT_DIR="$WORKDIR/.agent"
@@ -77,7 +88,7 @@ cd "$WORKDIR" && \
   export AGENT_SCAFFOLD_ROOT="$ROOT" && \
   cp "$ROLE_FILE" CLAUDE.md && \
   bd quickstart 2>/dev/null || true && \
-  claude "You have been activated as $ROLE. Orient yourself in this order:
+  claude $SKIP_PERMS "You have been activated as $ROLE. Orient yourself in this order:
 1. Read CLAUDE.md for your role instructions.
 2. Read .agent/memory/shared.md for cross-agent shared context.
 3. If .agent/memory/${ROLE}.md exists, read it for your role-specific memory from prior sessions.
