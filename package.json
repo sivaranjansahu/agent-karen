@@ -22,6 +22,9 @@
   "bin": {
     "karen": "./bin/cli.sh"
   },
+  "scripts": {
+    "postinstall": "./bin/postinstall.sh"
+  },
   "files": [
     "bin/",
     "lib/",
