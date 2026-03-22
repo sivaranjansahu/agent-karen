@@ -21,12 +21,6 @@ for arg in "$@"; do
   fi
 done
 
-# Build claude flags: broad allow but keep deny rules for safety
-CLAUDE_FLAGS=""
-if $SKIP_PERMS; then
-  CLAUDE_FLAGS='--allowedTools "Bash(*)" "Read" "Write" "Edit" "Glob" "Grep" "WebSearch" "WebFetch" "NotebookEdit"'
-fi
-
 ROLE="${ARGS[0]:?Usage: spawn.sh [--dangerously-skip-permissions] <role> \"<context>\" [working_dir]}"
 CONTEXT="${ARGS[1]:-}"
 WORKDIR="${ARGS[2]:-$(pwd)}"
@@ -35,6 +29,20 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 AGENT_DIR="$WORKDIR/.agent"
 COMMS="$AGENT_DIR/communications.md"
 FROM="${AGENT_ROLE:-manager}"
+
+# Inherit permission mode from bootstrap if not explicitly set
+if ! $SKIP_PERMS; then
+  PERM_FILE="$AGENT_DIR/state/skip_permissions"
+  if [[ -f "$PERM_FILE" ]] && [[ "$(cat "$PERM_FILE")" == "true" ]]; then
+    SKIP_PERMS=true
+  fi
+fi
+
+# Build claude flags: broad allow but keep deny rules for safety
+CLAUDE_FLAGS=""
+if $SKIP_PERMS; then
+  CLAUDE_FLAGS='--allowedTools "Bash(*)" "Read" "Write" "Edit" "Glob" "Grep" "WebSearch" "WebFetch" "NotebookEdit"'
+fi
 
 # Load multiplexer abstraction
 export AGENT_SCAFFOLD_ROOT="$ROOT"

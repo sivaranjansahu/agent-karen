@@ -23,6 +23,8 @@ if $SKIP_PERMS; then
   CLAUDE_FLAGS='--allowedTools "Bash(*)" "Read" "Write" "Edit" "Glob" "Grep" "WebSearch" "WebFetch" "NotebookEdit"'
 fi
 
+# Permission mode stored after .agent/ dirs are created (see below)
+
 WORKDIR="${ARGS[0]:-$(pwd)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -76,6 +78,9 @@ mkdir -p "$WORKDIR/.agent/inbox" \
 rm -f "$WORKDIR/.agent/state/"*_surface \
       "$WORKDIR/.agent/state/"*_workspace
 echo "✓ .agent/ directory ready"
+
+# Store permission mode so spawned agents inherit it
+echo "$SKIP_PERMS" > "$WORKDIR/.agent/state/skip_permissions"
 
 # ── 4. Init / reset communications.md ─────────────────────────────────────
 COMMS="$WORKDIR/.agent/communications.md"
