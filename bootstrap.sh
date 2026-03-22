@@ -7,15 +7,21 @@
 set -euo pipefail
 
 # Parse --dangerously-skip-permissions flag
-SKIP_PERMS=""
+SKIP_PERMS=false
 ARGS=()
 for arg in "$@"; do
   if [[ "$arg" == "--dangerously-skip-permissions" ]]; then
-    SKIP_PERMS="--dangerously-skip-permissions"
+    SKIP_PERMS=true
   else
     ARGS+=("$arg")
   fi
 done
+
+# Build claude flags: broad allow but keep deny rules for safety
+CLAUDE_FLAGS=""
+if $SKIP_PERMS; then
+  CLAUDE_FLAGS='--allowedTools "Bash(*)" "Read" "Write" "Edit" "Glob" "Grep" "WebSearch" "WebFetch" "NotebookEdit"'
+fi
 
 WORKDIR="${ARGS[0]:-$(pwd)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -193,4 +199,4 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 cd "$WORKDIR"
-exec claude $SKIP_PERMS
+exec claude $CLAUDE_FLAGS

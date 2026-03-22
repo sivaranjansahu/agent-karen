@@ -11,15 +11,21 @@
 set -euo pipefail
 
 # Parse --dangerously-skip-permissions flag
-SKIP_PERMS=""
+SKIP_PERMS=false
 ARGS=()
 for arg in "$@"; do
   if [[ "$arg" == "--dangerously-skip-permissions" ]]; then
-    SKIP_PERMS="--dangerously-skip-permissions"
+    SKIP_PERMS=true
   else
     ARGS+=("$arg")
   fi
 done
+
+# Build claude flags: broad allow but keep deny rules for safety
+CLAUDE_FLAGS=""
+if $SKIP_PERMS; then
+  CLAUDE_FLAGS='--allowedTools "Bash(*)" "Read" "Write" "Edit" "Glob" "Grep" "WebSearch" "WebFetch" "NotebookEdit"'
+fi
 
 ROLE="${ARGS[0]:?Usage: spawn.sh [--dangerously-skip-permissions] <role> \"<context>\" [working_dir]}"
 CONTEXT="${ARGS[1]:-}"
@@ -88,7 +94,7 @@ cd "$WORKDIR" && \
   export AGENT_SCAFFOLD_ROOT="$ROOT" && \
   cp "$ROLE_FILE" CLAUDE.md && \
   bd quickstart 2>/dev/null || true && \
-  claude $SKIP_PERMS "You have been activated as $ROLE. Orient yourself in this order:
+  claude $CLAUDE_FLAGS "You have been activated as $ROLE. Orient yourself in this order:
 1. Read CLAUDE.md for your role instructions.
 2. Read .agent/memory/shared.md for cross-agent shared context.
 3. If .agent/memory/${ROLE}.md exists, read it for your role-specific memory from prior sessions.
