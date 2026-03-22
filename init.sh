@@ -302,9 +302,39 @@ with open('$SETTINGS_FILE', 'w') as f:
 " 2>/dev/null
 echo "  ✓ Whitelisted scaffold scripts path"
 
-# Create symlinks in project so agents can find scripts without $AGENT_SCAFFOLD_ROOT
+# Inject hooks (inbox checker + auto-shutdown + notifications)
+python3 -c "
+import json
+with open('$SETTINGS_FILE', 'r') as f:
+    s = json.load(f)
+hooks = s.setdefault('hooks', {})
+
+# UserPromptSubmit — check inbox for new messages
+ups = hooks.setdefault('UserPromptSubmit', [])
+inbox_hook = {'matcher': '', 'hooks': [{'type': 'command', 'command': '.agent/hooks/check-inbox.sh'}]}
+# Avoid duplicates
+if not any('check-inbox' in str(h) for h in ups):
+    ups.append(inbox_hook)
+
+# Stop — notify + auto-shutdown
+stop = hooks.setdefault('Stop', [])
+stop_hooks = {'matcher': '', 'hooks': [
+    {'type': 'command', 'command': '.agent/hooks/notify-done.sh'},
+    {'type': 'command', 'command': '.agent/hooks/auto-shutdown.sh'}
+]}
+if not any('notify-done' in str(h) for h in stop):
+    stop.append(stop_hooks)
+
+with open('$SETTINGS_FILE', 'w') as f:
+    json.dump(s, f, indent=2)
+    f.write('\n')
+" 2>/dev/null && echo "  ✓ Configured inbox polling and notification hooks" || \
+    echo "  ⚠ Could not configure hooks — add manually"
+
+# Create symlinks in project so agents can find scripts and hooks
 ln -sfn "$SCAFFOLD_ROOT/scripts" "$PROJECT_DIR/.agent/scripts"
-echo "  ✓ Linked .agent/scripts → scaffold"
+ln -sfn "$SCAFFOLD_ROOT/hooks" "$PROJECT_DIR/.agent/hooks"
+echo "  ✓ Linked .agent/scripts and .agent/hooks → scaffold"
 
 # ── 8. Make scripts executable ────────────────────────────────────────────────
 

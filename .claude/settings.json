@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./hooks/check-inbox.sh"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",
