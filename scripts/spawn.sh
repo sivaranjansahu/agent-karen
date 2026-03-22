@@ -10,39 +10,14 @@
 
 set -euo pipefail
 
-# Parse --dangerously-skip-permissions flag
-SKIP_PERMS=false
-ARGS=()
-for arg in "$@"; do
-  if [[ "$arg" == "--dangerously-skip-permissions" ]]; then
-    SKIP_PERMS=true
-  else
-    ARGS+=("$arg")
-  fi
-done
-
-ROLE="${ARGS[0]:?Usage: spawn.sh [--dangerously-skip-permissions] <role> \"<context>\" [working_dir]}"
-CONTEXT="${ARGS[1]:-}"
-WORKDIR="${ARGS[2]:-$(pwd)}"
+ROLE="${1:?Usage: spawn.sh <role> \"<context>\" [working_dir]}"
+CONTEXT="${2:-}"
+WORKDIR="${3:-$(pwd)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 AGENT_DIR="$WORKDIR/.agent"
 COMMS="$AGENT_DIR/communications.md"
 FROM="${AGENT_ROLE:-manager}"
-
-# Inherit permission mode from bootstrap if not explicitly set
-if ! $SKIP_PERMS; then
-  PERM_FILE="$AGENT_DIR/state/skip_permissions"
-  if [[ -f "$PERM_FILE" ]] && [[ "$(cat "$PERM_FILE")" == "true" ]]; then
-    SKIP_PERMS=true
-  fi
-fi
-
-# Build claude flags
-CLAUDE_FLAGS=""
-if $SKIP_PERMS; then
-  CLAUDE_FLAGS="--dangerously-skip-permissions"
-fi
 
 # Load multiplexer abstraction
 export AGENT_SCAFFOLD_ROOT="$ROOT"
@@ -102,7 +77,7 @@ cd "$WORKDIR" && \
   export AGENT_SCAFFOLD_ROOT="$ROOT" && \
   cp "$ROLE_FILE" CLAUDE.md && \
   bd quickstart 2>/dev/null || true && \
-  claude $CLAUDE_FLAGS "You have been activated as $ROLE. Orient yourself in this order:
+  claude "You have been activated as $ROLE. Orient yourself in this order:
 1. Read CLAUDE.md for your role instructions.
 2. Read .agent/memory/shared.md for cross-agent shared context.
 3. If .agent/memory/${ROLE}.md exists, read it for your role-specific memory from prior sessions.

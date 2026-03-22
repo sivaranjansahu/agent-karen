@@ -6,26 +6,7 @@
 
 set -euo pipefail
 
-# Parse --dangerously-skip-permissions flag
-SKIP_PERMS=false
-ARGS=()
-for arg in "$@"; do
-  if [[ "$arg" == "--dangerously-skip-permissions" ]]; then
-    SKIP_PERMS=true
-  else
-    ARGS+=("$arg")
-  fi
-done
-
-# Build claude flags
-CLAUDE_FLAGS=""
-if $SKIP_PERMS; then
-  CLAUDE_FLAGS="--dangerously-skip-permissions"
-fi
-
-# Permission mode stored after .agent/ dirs are created (see below)
-
-WORKDIR="${ARGS[0]:-$(pwd)}"
+WORKDIR="${1:-$(pwd)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "╔══════════════════════════════════════════╗"
@@ -79,8 +60,6 @@ rm -f "$WORKDIR/.agent/state/"*_surface \
       "$WORKDIR/.agent/state/"*_workspace
 echo "✓ .agent/ directory ready"
 
-# Store permission mode so spawned agents inherit it
-echo "$SKIP_PERMS" > "$WORKDIR/.agent/state/skip_permissions"
 
 # ── 4. Init / reset communications.md ─────────────────────────────────────
 COMMS="$WORKDIR/.agent/communications.md"
@@ -204,4 +183,4 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 cd "$WORKDIR"
-exec claude $CLAUDE_FLAGS
+exec claude
