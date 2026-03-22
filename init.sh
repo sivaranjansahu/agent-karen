@@ -170,6 +170,9 @@ karen_perms = {
         'Bash(wc *)', 'Bash(sort *)', 'Bash(mkdir *)', 'Bash(cp *)',
         'Bash(mv *)', 'Bash(touch *)', 'Bash(chmod *)', 'Bash(which *)',
         'Bash(echo *)', 'Bash(date *)', 'Bash(curl *)', 'Bash(jq *)',
+        'Bash(printenv *)', 'Bash(find *)', 'Bash(grep *)', 'Bash(sed *)',
+        'Bash(awk *)', 'Bash(cut *)', 'Bash(tr *)', 'Bash(env *)',
+        'Bash(dirname *)', 'Bash(basename *)', 'Bash(realpath *)', 'Bash(readlink *)',
         'Bash(tsc *)', 'Bash(eslint *)', 'Bash(prettier *)'
     ],
     'deny': [
@@ -247,6 +250,18 @@ else
       "Bash(date *)",
       "Bash(curl *)",
       "Bash(jq *)",
+      "Bash(printenv *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(sed *)",
+      "Bash(awk *)",
+      "Bash(cut *)",
+      "Bash(tr *)",
+      "Bash(env *)",
+      "Bash(dirname *)",
+      "Bash(basename *)",
+      "Bash(realpath *)",
+      "Bash(readlink *)",
       "Bash(tsc *)",
       "Bash(eslint *)",
       "Bash(prettier *)"
