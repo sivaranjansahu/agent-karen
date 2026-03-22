@@ -164,6 +164,8 @@ karen_perms = {
         'Bash(git stash *)', 'Bash(git add *)', 'Bash(git commit *)',
         'Bash(bd *)', 'Bash(karen *)',
         'Bash(cmux *)', 'Bash(tmux *)',
+        'Bash($SCAFFOLD_ROOT/scripts/*)',
+        'Bash(sleep *)',
         'Bash(npm run *)', 'Bash(npm test *)', 'Bash(npm install *)', 'Bash(npx *)',
         'Bash(node *)', 'Bash(python3 *)',
         'Bash(ls *)', 'Bash(cat *)', 'Bash(head *)', 'Bash(tail *)',
@@ -228,6 +230,7 @@ else
       "Bash(karen *)",
       "Bash(cmux *)",
       "Bash(tmux *)",
+      "Bash(sleep *)",
       "Bash(npm run *)",
       "Bash(npm test *)",
       "Bash(npm install *)",
@@ -280,6 +283,22 @@ else
 PERMS
   echo "  ✓ Created .claude/settings.json with safe default permissions"
 fi
+
+# Inject the resolved scaffold scripts path (can't use heredoc for this)
+python3 -c "
+import json
+with open('$SETTINGS_FILE', 'r') as f:
+    s = json.load(f)
+perms = s.get('permissions', {})
+allow = set(perms.get('allow', []))
+allow.add('Bash($SCAFFOLD_ROOT/scripts/*)')
+perms['allow'] = sorted(allow)
+s['permissions'] = perms
+with open('$SETTINGS_FILE', 'w') as f:
+    json.dump(s, f, indent=2)
+    f.write('\n')
+" 2>/dev/null
+echo "  ✓ Whitelisted scaffold scripts path"
 
 # ── 8. Make scripts executable ────────────────────────────────────────────────
 
