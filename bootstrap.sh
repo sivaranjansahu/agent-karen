@@ -60,6 +60,10 @@ rm -f "$WORKDIR/.agent/state/"*_surface \
       "$WORKDIR/.agent/state/"*_workspace
 echo "✓ .agent/ directory ready"
 
+# Ensure symlinks to scaffold scripts and hooks exist
+ln -sfn "$SCRIPT_DIR/scripts" "$WORKDIR/.agent/scripts"
+ln -sfn "$SCRIPT_DIR/hooks" "$WORKDIR/.agent/hooks"
+echo "✓ .agent/scripts and .agent/hooks linked"
 
 # ── 4. Init / reset communications.md ─────────────────────────────────────
 COMMS="$WORKDIR/.agent/communications.md"
