@@ -4,8 +4,8 @@
 # Usage:
 #   ./scripts/status.sh
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
 echo "╔═══════════════════════════════╗"
 echo "║     Agent Status Snapshot     ║"

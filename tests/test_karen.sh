@@ -920,6 +920,66 @@ test_bootstrap_clears_stale_surface_files() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+# SUITE 10: Symlink resolution (production path)
+#   Scripts are invoked via .agent/scripts symlink, NOT direct path.
+#   This is how spawned agents actually call scripts in real projects.
+# ═══════════════════════════════════════════════════════════════════════
+
+test_scripts_work_via_symlink() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+
+  # .agent/scripts should be a symlink to $SCAFFOLD_ROOT/scripts
+  assert_symlink ".agent/scripts is symlink" "$TEST_TMPDIR/project/.agent/scripts"
+
+  # The critical test: source mux.sh via the symlink path (this is what broke)
+  local rc=0
+  (
+    SCRIPT_DIR="$(cd "$TEST_TMPDIR/project/.agent/scripts" && pwd -P)"
+    ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+    source "$ROOT/lib/mux.sh"
+  ) 2>/dev/null || rc=$?
+  assert_eq "mux.sh loads via symlink path" "0" "$rc"
+}
+
+test_spawn_via_symlink() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+
+  # Call spawn through the .agent/scripts symlink — the production path
+  local rc=0
+  "$TEST_TMPDIR/project/.agent/scripts/spawn.sh" pm "Symlink spawn test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
+
+  assert_eq "spawn via symlink succeeds" "0" "$rc"
+  assert_file_exists "pm inbox via symlink" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
+  assert_json_field "init body" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 1 "body" "Symlink spawn test"
+}
+
+test_msg_via_symlink() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="lead"
+
+  local rc=0
+  "$TEST_TMPDIR/project/.agent/scripts/msg.sh" dev1 "Symlink msg test" message >/dev/null 2>&1 || rc=$?
+
+  assert_eq "msg via symlink succeeds" "0" "$rc"
+  assert_file_exists "dev1 inbox via symlink" "$TEST_TMPDIR/project/.agent/inbox/dev1.jsonl"
+  assert_json_field "msg body" "$TEST_TMPDIR/project/.agent/inbox/dev1.jsonl" 1 "body" "Symlink msg test"
+}
+
+test_health_via_symlink() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+
+  local rc=0
+  "$TEST_TMPDIR/project/.agent/scripts/health.sh" >/dev/null 2>&1 || rc=$?
+
+  assert_eq "health via symlink succeeds" "0" "$rc"
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 # TEST RUNNER
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -1007,7 +1067,14 @@ main() {
   run_test test_devN_project_local_override
   echo ""
 
-  echo "── Suite 10: karen start (bootstrap) ──"
+  echo "── Suite 10: Symlink resolution (production path) ──"
+  run_test test_scripts_work_via_symlink
+  run_test test_spawn_via_symlink
+  run_test test_msg_via_symlink
+  run_test test_health_via_symlink
+  echo ""
+
+  echo "── Suite 11: karen start (bootstrap) ──"
   run_test test_bootstrap_creates_agent_dirs
   run_test test_bootstrap_resets_communications_log
   run_test test_bootstrap_copies_manager_role

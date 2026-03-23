@@ -17,8 +17,8 @@ set -euo pipefail
 ROLE="${1:?Usage: msg.sh <role> \"<message>\" [type]}"
 MSG="${2:?Usage: msg.sh <role> \"<message>\" [type]}"
 TYPE="${3:-message}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 AGENT_DIR="$(pwd)/.agent"
 
 INBOX="$AGENT_DIR/inbox/${ROLE}.jsonl"
