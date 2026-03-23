@@ -151,185 +151,92 @@ CLAUDE_DIR="$PROJECT_DIR/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 mkdir -p "$CLAUDE_DIR"
 
-if [[ -f "$SETTINGS_FILE" ]]; then
-  # Merge: add karen permissions to existing settings using python
-  python3 -c "
-import json, sys
+# Single python3 call: create or merge settings, inject scaffold path, configure hooks
+python3 - "$SETTINGS_FILE" "$SCAFFOLD_ROOT" << 'PYSETUP'
+import json, sys, os
 
-karen_perms = {
-    'allow': [
-        'Read', 'Edit', 'Write', 'Glob', 'Grep', 'NotebookEdit',
-        'Bash(git status *)', 'Bash(git diff *)', 'Bash(git log *)',
-        'Bash(git show *)', 'Bash(git branch *)', 'Bash(git blame *)',
-        'Bash(git stash *)', 'Bash(git add *)', 'Bash(git commit *)',
-        'Bash(bd *)', 'Bash(karen *)',
-        'Bash(cmux *)', 'Bash(tmux *)',
-        'Bash(.agent/scripts/*)',
-        'Bash($SCAFFOLD_ROOT/scripts/*)',
-        'Bash(sleep *)',
-        'Bash(npm run *)', 'Bash(npm test *)', 'Bash(npm install *)', 'Bash(npx *)',
-        'Bash(node *)', 'Bash(python3 *)',
-        'Bash(ls *)', 'Bash(cat *)', 'Bash(head *)', 'Bash(tail *)',
-        'Bash(wc *)', 'Bash(sort *)', 'Bash(mkdir *)', 'Bash(cp *)',
-        'Bash(mv *)', 'Bash(touch *)', 'Bash(chmod *)', 'Bash(which *)',
-        'Bash(echo *)', 'Bash(date *)', 'Bash(curl *)', 'Bash(jq *)',
-        'Bash(printenv *)', 'Bash(find *)', 'Bash(grep *)', 'Bash(sed *)',
-        'Bash(awk *)', 'Bash(cut *)', 'Bash(tr *)', 'Bash(env *)',
-        'Bash(dirname *)', 'Bash(basename *)', 'Bash(realpath *)', 'Bash(readlink *)',
-        'Bash(tsc *)', 'Bash(eslint *)', 'Bash(prettier *)'
-    ],
-    'deny': [
-        'Bash(git push *)', 'Bash(git reset --hard *)', 'Bash(git clean *)',
-        'Bash(git branch -D *)', 'Bash(git push --force *)',
-        'Bash(rm -rf *)', 'Bash(sudo *)'
-    ]
-}
+settings_file = sys.argv[1]
+scaffold_root = sys.argv[2]
 
-with open('$SETTINGS_FILE', 'r') as f:
-    settings = json.load(f)
+karen_allow = [
+    'Read', 'Edit', 'Write', 'Glob', 'Grep', 'NotebookEdit',
+    'Bash(git status *)', 'Bash(git diff *)', 'Bash(git log *)',
+    'Bash(git show *)', 'Bash(git branch *)', 'Bash(git blame *)',
+    'Bash(git stash *)', 'Bash(git add *)', 'Bash(git commit *)',
+    'Bash(bd *)', 'Bash(karen *)',
+    'Bash(cmux *)', 'Bash(tmux *)',
+    'Bash(.agent/scripts/*)',
+    f'Bash({scaffold_root}/scripts/*)',
+    'Bash(sleep *)',
+    'Bash(npm run *)', 'Bash(npm test *)', 'Bash(npm install *)', 'Bash(npx *)',
+    'Bash(node *)', 'Bash(python3 *)',
+    'Bash(ls *)', 'Bash(cat *)', 'Bash(head *)', 'Bash(tail *)',
+    'Bash(wc *)', 'Bash(sort *)', 'Bash(mkdir *)', 'Bash(cp *)',
+    'Bash(mv *)', 'Bash(touch *)', 'Bash(chmod *)', 'Bash(which *)',
+    'Bash(echo *)', 'Bash(date *)', 'Bash(curl *)', 'Bash(jq *)',
+    'Bash(printenv *)', 'Bash(find *)', 'Bash(grep *)', 'Bash(sed *)',
+    'Bash(awk *)', 'Bash(cut *)', 'Bash(tr *)', 'Bash(env *)',
+    'Bash(dirname *)', 'Bash(basename *)', 'Bash(realpath *)', 'Bash(readlink *)',
+    'Bash(tsc *)', 'Bash(eslint *)', 'Bash(prettier *)'
+]
 
+karen_deny = [
+    'Bash(git push *)', 'Bash(git reset --hard *)', 'Bash(git clean *)',
+    'Bash(git branch -D *)', 'Bash(git push --force *)',
+    'Bash(rm -rf *)', 'Bash(sudo *)'
+]
+
+# Load existing settings or start fresh
+settings = {}
+if os.path.isfile(settings_file) and os.path.getsize(settings_file) > 0:
+    try:
+        with open(settings_file, 'r') as f:
+            settings = json.load(f)
+        print("  ✓ Merged karen permissions into existing .claude/settings.json")
+    except (json.JSONDecodeError, ValueError):
+        print("  ⚠ Existing settings.json was invalid, recreating")
+        settings = {}
+else:
+    print("  ✓ Created .claude/settings.json with safe default permissions")
+
+# Merge permissions
 perms = settings.setdefault('permissions', {})
-existing_allow = set(perms.get('allow', []))
-existing_deny = set(perms.get('deny', []))
+allow = set(perms.get('allow', []))
+deny = set(perms.get('deny', []))
+allow.update(karen_allow)
+deny.update(karen_deny)
+perms['allow'] = sorted(allow)
+perms['deny'] = sorted(deny)
 
-# Add karen permissions (don't duplicate)
-for p in karen_perms['allow']:
-    existing_allow.add(p)
-for p in karen_perms['deny']:
-    existing_deny.add(p)
+# Configure hooks
+hooks = settings.setdefault('hooks', {})
 
-perms['allow'] = sorted(existing_allow)
-perms['deny'] = sorted(existing_deny)
+ups = hooks.setdefault('UserPromptSubmit', [])
+if not any('check-inbox' in str(h) for h in ups):
+    ups.append({'matcher': '', 'hooks': [
+        {'type': 'command', 'command': '.agent/hooks/check-inbox.sh'}
+    ]})
 
-with open('$SETTINGS_FILE', 'w') as f:
+stop = hooks.setdefault('Stop', [])
+if not any('notify-done' in str(h) for h in stop):
+    stop.append({'matcher': '', 'hooks': [
+        {'type': 'command', 'command': '.agent/hooks/notify-done.sh'},
+        {'type': 'command', 'command': '.agent/hooks/auto-shutdown.sh'}
+    ]})
+
+# Write
+with open(settings_file, 'w') as f:
     json.dump(settings, f, indent=2)
     f.write('\n')
-" 2>/dev/null && echo "  ✓ Merged karen permissions into existing .claude/settings.json" || \
-    echo "  ⚠ Could not merge permissions — check .claude/settings.json manually"
-else
-  # Create fresh settings with karen permissions
-  cat > "$SETTINGS_FILE" << 'PERMS'
-{
-  "permissions": {
-    "allow": [
-      "Read",
-      "Edit",
-      "Write",
-      "Glob",
-      "Grep",
-      "NotebookEdit",
-      "Bash(git status *)",
-      "Bash(git diff *)",
-      "Bash(git log *)",
-      "Bash(git show *)",
-      "Bash(git branch *)",
-      "Bash(git blame *)",
-      "Bash(git stash *)",
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(bd *)",
-      "Bash(karen *)",
-      "Bash(cmux *)",
-      "Bash(tmux *)",
-      "Bash(.agent/scripts/*)",
-      "Bash(sleep *)",
-      "Bash(npm run *)",
-      "Bash(npm test *)",
-      "Bash(npm install *)",
-      "Bash(npx *)",
-      "Bash(node *)",
-      "Bash(python3 *)",
-      "Bash(ls *)",
-      "Bash(cat *)",
-      "Bash(head *)",
-      "Bash(tail *)",
-      "Bash(wc *)",
-      "Bash(sort *)",
-      "Bash(mkdir *)",
-      "Bash(cp *)",
-      "Bash(mv *)",
-      "Bash(touch *)",
-      "Bash(chmod *)",
-      "Bash(which *)",
-      "Bash(echo *)",
-      "Bash(date *)",
-      "Bash(curl *)",
-      "Bash(jq *)",
-      "Bash(printenv *)",
-      "Bash(find *)",
-      "Bash(grep *)",
-      "Bash(sed *)",
-      "Bash(awk *)",
-      "Bash(cut *)",
-      "Bash(tr *)",
-      "Bash(env *)",
-      "Bash(dirname *)",
-      "Bash(basename *)",
-      "Bash(realpath *)",
-      "Bash(readlink *)",
-      "Bash(tsc *)",
-      "Bash(eslint *)",
-      "Bash(prettier *)"
-    ],
-    "deny": [
-      "Bash(git push *)",
-      "Bash(git reset --hard *)",
-      "Bash(git clean *)",
-      "Bash(git branch -D *)",
-      "Bash(git push --force *)",
-      "Bash(rm -rf *)",
-      "Bash(sudo *)"
-    ]
-  }
-}
-PERMS
-  echo "  ✓ Created .claude/settings.json with safe default permissions"
+
+print("  ✓ Whitelisted scaffold scripts path")
+print("  ✓ Configured inbox polling and notification hooks")
+PYSETUP
+
+if [[ $? -ne 0 ]]; then
+  echo "  ⚠ Python setup failed. Ensure python3 is installed and working."
+  echo "  You may need to configure .claude/settings.json manually."
 fi
-
-# Inject the resolved scaffold scripts path (can't use heredoc for this)
-python3 -c "
-import json
-with open('$SETTINGS_FILE', 'r') as f:
-    s = json.load(f)
-perms = s.get('permissions', {})
-allow = set(perms.get('allow', []))
-allow.add('Bash($SCAFFOLD_ROOT/scripts/*)')
-perms['allow'] = sorted(allow)
-s['permissions'] = perms
-with open('$SETTINGS_FILE', 'w') as f:
-    json.dump(s, f, indent=2)
-    f.write('\n')
-" 2>/dev/null
-echo "  ✓ Whitelisted scaffold scripts path"
-
-# Inject hooks (inbox checker + auto-shutdown + notifications)
-python3 -c "
-import json
-with open('$SETTINGS_FILE', 'r') as f:
-    s = json.load(f)
-hooks = s.setdefault('hooks', {})
-
-# UserPromptSubmit — check inbox for new messages
-ups = hooks.setdefault('UserPromptSubmit', [])
-inbox_hook = {'matcher': '', 'hooks': [{'type': 'command', 'command': '.agent/hooks/check-inbox.sh'}]}
-# Avoid duplicates
-if not any('check-inbox' in str(h) for h in ups):
-    ups.append(inbox_hook)
-
-# Stop — notify + auto-shutdown
-stop = hooks.setdefault('Stop', [])
-stop_hooks = {'matcher': '', 'hooks': [
-    {'type': 'command', 'command': '.agent/hooks/notify-done.sh'},
-    {'type': 'command', 'command': '.agent/hooks/auto-shutdown.sh'}
-]}
-if not any('notify-done' in str(h) for h in stop):
-    stop.append(stop_hooks)
-
-with open('$SETTINGS_FILE', 'w') as f:
-    json.dump(s, f, indent=2)
-    f.write('\n')
-" 2>/dev/null && echo "  ✓ Configured inbox polling and notification hooks" || \
-    echo "  ⚠ Could not configure hooks — add manually"
 
 # Create symlinks in project so agents can find scripts and hooks
 ln -sfn "$SCAFFOLD_ROOT/scripts" "$PROJECT_DIR/.agent/scripts"
