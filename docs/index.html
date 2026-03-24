@@ -511,7 +511,8 @@ pre, code {
   font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
   border-radius: var(--radius-full); margin-bottom: var(--space-6);
 }
-.hero-title { font-size: var(--text-5xl); font-weight: 800; margin-bottom: var(--space-4); }
+.hero-xl-title { font-size: var(--text-6xl); font-weight: 800; margin-bottom: var(--space-4); }
+.hero-title { font-size: var(--text-4xl); font-weight: 800; margin-bottom: var(--space-4); }
 .hero-subtitle { font-size: var(--text-xl); color: var(--color-text-secondary); margin: 0 auto var(--space-8); }
 .hero-cta {
   display: inline-block; padding: var(--space-3) var(--space-8);
@@ -549,7 +550,8 @@ pre, code {
     <span class="nav-title">agent-karen</span>
     <div class="nav-dots">
       <button class="nav-dot" data-target="hero" aria-label="Intro" title="Intro"></button>
-      <button class="nav-dot" data-target="module-1" aria-label="Module 1" title="What It Does"></button>
+      <button class="nav-dot" data-target="module-0" aria-label="Module 0" title="What Is Karen"></button>
+      <button class="nav-dot" data-target="module-1" aria-label="Module 1" title="Getting Started"></button>
       <button class="nav-dot" data-target="module-2" aria-label="Module 2" title="Meet the Agents"></button>
       <button class="nav-dot" data-target="module-3" aria-label="Module 3" title="How They Talk"></button>
       <button class="nav-dot" data-target="module-4" aria-label="Module 4" title="The Lifecycle"></button>
@@ -565,21 +567,22 @@ pre, code {
      ═══════════════════════════════════════════════════════════════ -->
 <section class="hero" id="hero" style="background: var(--color-bg)">
   <div class="hero-content animate-in">
-    <span class="hero-badge">Interactive Course</span>
-    <h1 class="hero-title">How agent-karen<br>Works Under the Hood</h1>
+    <img src="karen.png" alt="karen logo" style="width: 140px; height: 140px; border-radius: 50%; margin-bottom: var(--space-6); box-shadow: var(--shadow-lg);">
+    <h1 class="hero-xl-title">Agent Karen</h1>
+    <h1 class="hero-title">She Wants to Talk to the Manager</h1>
     <p class="hero-subtitle">A multi-agent system that spawns autonomous AI agents, each in its own terminal, working together like a software team. No servers. No databases. Just shell scripts and markdown.</p>
-    <a href="#module-1" class="hero-cta">Start Learning &darr;</a>
+    <a href="#module-0" class="hero-cta">Let's Explore &darr;</a>
   </div>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════
-     MODULE 1: WHAT IT DOES
+     MODULE 0: WHAT IS KAREN
      ═══════════════════════════════════════════════════════════════ -->
-<section class="module" id="module-1" style="background: var(--color-bg-warm)">
+<section class="module" id="module-0" style="background: var(--color-bg-warm)">
   <div class="module-content">
     <header class="module-header animate-in">
       <span class="module-number">01</span>
-      <h1 class="module-title">What karen Actually Does</h1>
+      <h1 class="module-title">What Is Karen</h1>
       <p class="module-subtitle">From one command to a team of AI agents building your software</p>
     </header>
 
@@ -666,9 +669,152 @@ pre, code {
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════
+     MODULE 1: GETTING STARTED
+     ═══════════════════════════════════════════════════════════════ -->
+<section class="module" id="module-1" style="background: var(--color-bg)">
+  <div class="module-content">
+    <header class="module-header animate-in">
+      <span class="module-number">02</span>
+      <h1 class="module-title">Install &amp; Get Started</h1>
+      <p class="module-subtitle">From zero to a working multi-agent team in under 2 minutes</p>
+    </header>
+
+    <div class="module-body">
+      <section class="screen animate-in">
+        <h2 class="screen-heading">What You Need</h2>
+        <p>karen runs on top of two tools you'll need installed first:</p>
+        <div class="icon-rows">
+          <div class="icon-row">
+            <div class="icon-circle" style="background: var(--color-actor-2);">&#9889;</div>
+            <div>
+              <strong>Claude Code</strong>
+              <p>Anthropic's CLI for Claude. This is the AI engine that powers each agent. Install with <code>npm install -g @anthropic-ai/claude-code</code></p>
+            </div>
+          </div>
+          <div class="icon-row">
+            <div class="icon-circle" style="background: var(--color-actor-1);">&#127912;</div>
+            <div>
+              <strong>cmux</strong>
+              <p>A terminal multiplexer for macOS that gives each agent its own tab. Download from <strong>cmux.com</strong>. Alternatively, tmux works too.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Install karen</h2>
+        <p>One command. That's it.</p>
+        <div class="translation-block">
+          <div class="translation-code">
+            <span class="translation-label">TERMINAL</span>
+            <pre><code><span class="code-function">npm</span> install -g agent-karen</code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">WHAT THIS DOES</span>
+            <div class="translation-lines">
+              <p class="tl">Downloads karen from the npm registry and installs it globally so you can use the <code>karen</code> command from anywhere.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Set Up Your Project</h2>
+        <div class="step-cards">
+          <div class="step-card">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <strong>Initialize the scaffold</strong>
+              <div class="translation-block" style="margin: var(--space-4) 0 0;">
+                <div class="translation-code">
+                  <span class="translation-label">TERMINAL</span>
+                  <pre><code><span class="code-function">karen</span> init ~/projects/my-app</code></pre>
+                </div>
+                <div class="translation-english">
+                  <span class="translation-label">WHAT THIS DOES</span>
+                  <div class="translation-lines">
+                    <p class="tl">Creates the <code>.agent/</code> directory with inboxes, memory, and state folders. Writes permissions to <code>.claude/settings.json</code> so agents can work autonomously. Sets up hooks for message passing.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <strong>Start the manager</strong>
+              <div class="translation-block" style="margin: var(--space-4) 0 0;">
+                <div class="translation-code">
+                  <span class="translation-label">TERMINAL</span>
+                  <pre><code><span class="code-keyword">cd</span> ~/projects/my-app
+<span class="code-function">karen</span> start</code></pre>
+                </div>
+                <div class="translation-english">
+                  <span class="translation-label">WHAT THIS DOES</span>
+                  <div class="translation-lines">
+                    <p class="tl">Launches a cmux workspace with the manager agent. This is the agent you'll talk to directly &mdash; it orchestrates everything else.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <strong>Tell the manager what to build</strong>
+              <div class="translation-block" style="margin: var(--space-4) 0 0;">
+                <div class="translation-code">
+                  <span class="translation-label">IN THE MANAGER'S TERMINAL</span>
+                  <pre><code><span class="code-string">"I want to build a task management app
+with drag-and-drop. Spawn a PM and
+let's brainstorm."</span></code></pre>
+                </div>
+                <div class="translation-english">
+                  <span class="translation-label">WHAT HAPPENS NEXT</span>
+                  <div class="translation-lines">
+                    <p class="tl">The manager spawns a PM agent in a new tab. The PM asks you clarifying questions, writes a brief, then the manager spawns a dev lead who breaks it into tasks and assigns developers. All automatically.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Optional: Link Reference Docs</h2>
+        <p>If you have existing documentation you want agents to reference (API docs, design specs, etc.), link them during init:</p>
+        <div class="translation-block">
+          <div class="translation-code">
+            <span class="translation-label">TERMINAL</span>
+            <pre><code><span class="code-function">karen</span> init ~/projects/my-app \
+  --knowledge ~/docs/api-reference \
+  --knowledge ~/docs/design-system</code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">WHAT THIS DOES</span>
+            <div class="translation-lines">
+              <p class="tl">Creates symlinks in <code>.agent/knowledge/</code> pointing to your docs. Every agent reads these on boot, so they have full context about your project without you having to explain it each time.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-icon">&#128218;</div>
+          <div class="callout-content">
+            <strong class="callout-title">Custom Roles</strong>
+            <p>Want agents with specialized behaviors? Create a <code>.agent-roles/</code> directory in your project and add markdown files like <code>copywriter.md</code> or <code>data-engineer.md</code>. Karen auto-discovers them &mdash; no config needed.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════
      MODULE 2: MEET THE AGENTS
      ═══════════════════════════════════════════════════════════════ -->
-<section class="module" id="module-2" style="background: var(--color-bg)">
+<section class="module" id="module-2" style="background: var(--color-bg-warm)">
   <div class="module-content">
     <header class="module-header animate-in">
       <span class="module-number">02</span>
@@ -1177,51 +1323,6 @@ EOF
         </div>
       </section>
 
-      <section class="screen animate-in">
-        <h2 class="screen-heading">Test Your Debugging Intuition</h2>
-        <div class="quiz-container" id="quiz-6">
-          <div class="quiz-question-block" data-correct="opt-b">
-            <h3 class="quiz-question">The dev lead says it spawned dev1 five minutes ago, but dev1 hasn't sent any messages. What do you check first?</h3>
-            <div class="quiz-options">
-              <button class="quiz-option" data-value="opt-a" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>Read dev1's inbox to see if the init message is there</span>
-              </button>
-              <button class="quiz-option" data-value="opt-b" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>Run health.sh to check if dev1's workspace is actually alive</span>
-              </button>
-              <button class="quiz-option" data-value="opt-c" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>Check communications.md for the spawn event</span>
-              </button>
-            </div>
-            <div class="quiz-feedback" data-correct="Exactly! The most common reason for silence is a dead agent. health.sh will tell you immediately if the workspace is UP or DOWN. If it's down, respawn it." data-incorrect="Not the best first step. The quickest way to diagnose silence is health.sh &mdash; it tells you if the agent is alive. If it's dead, nothing else matters. Checking inbox or comms is useful but won't tell you if the process is actually running."></div>
-          </div>
-
-          <div class="quiz-question-block" data-correct="opt-b2">
-            <h3 class="quiz-question">You see this in communications.md: PM sent a "result" message 3 minutes ago, but the PM's workspace is still showing "Needs Input." What's likely wrong?</h3>
-            <div class="quiz-options">
-              <button class="quiz-option" data-value="opt-a2" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>The PM agent crashed before finishing</span>
-              </button>
-              <button class="quiz-option" data-value="opt-b2" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>The notify-done.sh hook didn't fire or didn't detect the result</span>
-              </button>
-              <button class="quiz-option" data-value="opt-c2" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>The PM has more work to do</span>
-              </button>
-            </div>
-            <div class="quiz-feedback" data-correct="Right! The PM successfully sent a result (it's in comms), but the auto-close hook didn't fire. This could mean the hook isn't wired in settings.json, or the grep pattern didn't match. The PM is done &mdash; it's the cleanup that failed." data-incorrect="Think about what 'result' means. The PM sent a result message &mdash; that's the signal that work is complete. The issue is that the workspace didn't auto-close afterward. The notify-done.sh Stop hook is supposed to detect result messages and close the workspace, but something prevented it from working."></div>
-          </div>
-
-          <button class="quiz-check-btn" onclick="checkQuiz('quiz-6')">Check Answers</button>
-          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-6')">Try Again</button>
-        </div>
-      </section>
     </div>
   </div>
 </section>
@@ -1308,71 +1409,6 @@ EOF
             <h4 class="pattern-title">Role = Markdown = Behavior</h4>
             <p class="pattern-desc">Agent behavior is defined entirely by a text file. No code to change, no settings to configure. Edit the markdown, change the agent.</p>
           </div>
-        </div>
-      </section>
-
-      <section class="screen animate-in">
-        <h2 class="screen-heading">Final Quiz: Put It All Together</h2>
-        <div class="quiz-container" id="quiz-7">
-          <div class="quiz-question-block" data-correct="opt-f1b">
-            <h3 class="quiz-question">You want to add a "copywriter" agent that writes marketing copy. What's the minimum you need to do?</h3>
-            <div class="quiz-options">
-              <button class="quiz-option" data-value="opt-f1a" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>Modify spawn.sh to add a new case for "copywriter"</span>
-              </button>
-              <button class="quiz-option" data-value="opt-f1b" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>Create a copywriter.md file in .agent-roles/ or roles/</span>
-              </button>
-              <button class="quiz-option" data-value="opt-f1c" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>Add "copywriter" to a config file and restart karen</span>
-              </button>
-            </div>
-            <div class="quiz-feedback" data-correct="Exactly! The role lookup in spawn.sh is dynamic &mdash; it searches the role directories. Drop a markdown file, and spawn.sh finds it automatically. No code changes needed." data-incorrect="The role system is file-based, not config-based. spawn.sh dynamically searches .agent-roles/, custom-roles/, and roles/ for a matching .md file. Just create the file and spawn away."></div>
-          </div>
-
-          <div class="quiz-question-block" data-correct="opt-f2c">
-            <h3 class="quiz-question">A security audit found a vulnerability. The security agent sends a P0 escalation. Trace what happens next in the system.</h3>
-            <div class="quiz-options">
-              <button class="quiz-option" data-value="opt-f2a" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>The system automatically stops all other agents and alerts the user</span>
-              </button>
-              <button class="quiz-option" data-value="opt-f2b" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>The escalation goes to the dev lead, who patches the vulnerability</span>
-              </button>
-              <button class="quiz-option" data-value="opt-f2c" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>msg.sh writes to manager's inbox, check-inbox.sh surfaces it on the manager's next response, the manager decides what to do</span>
-              </button>
-            </div>
-            <div class="quiz-feedback" data-correct="That's it! There's no magic automation for escalations &mdash; they follow the same message flow as everything else. The manager sees the escalation in their inbox (via the hook) and decides the response. The system is intentionally human-in-the-loop for critical decisions." data-incorrect="Escalations follow the standard message flow. msg.sh puts the message in the manager's inbox, check-inbox.sh surfaces it before the manager's next response, and the manager (who you're talking to) decides the next step. No automated kill switches &mdash; the human makes the call."></div>
-          </div>
-
-          <div class="quiz-question-block" data-correct="opt-f3b">
-            <h3 class="quiz-question">You're debugging why agents on a colleague's machine can't find lib/mux.sh. The scripts are in .agent/scripts/ which is a symlink. What's the likely issue?</h3>
-            <div class="quiz-options">
-              <button class="quiz-option" data-value="opt-f3a" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>mux.sh was deleted from the npm package</span>
-              </button>
-              <button class="quiz-option" data-value="opt-f3b" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>The scripts use pwd (logical path) instead of pwd -P (physical path), so the symlink doesn't resolve to the scaffold root</span>
-              </button>
-              <button class="quiz-option" data-value="opt-f3c" onclick="selectOption(this)">
-                <div class="quiz-option-radio"></div>
-                <span>The symlink is broken because the scaffold was moved</span>
-              </button>
-            </div>
-            <div class="quiz-feedback" data-correct="Nailed it! This was an actual bug fixed in v0.1.15. pwd returns logical paths (keeps the symlink name), so .agent/scripts/../ resolved to .agent/ instead of the scaffold root. pwd -P resolves physical paths through symlinks. A real-world lesson in how symlinks can bite you." data-incorrect="This is a real bug from karen's history! The issue was pwd vs pwd -P. When scripts are accessed through a symlink (.agent/scripts/ &rarr; scaffold/scripts/), pwd keeps the symlink path. So SCRIPT_DIR/.. resolves to .agent/ instead of the scaffold root where lib/mux.sh lives. The fix: use pwd -P to resolve physical paths through symlinks."></div>
-          </div>
-
-          <button class="quiz-check-btn" onclick="checkQuiz('quiz-7')">Check Answers</button>
-          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-7')">Try Again</button>
         </div>
       </section>
 
