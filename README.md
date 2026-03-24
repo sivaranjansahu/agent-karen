@@ -1,5 +1,7 @@
 # agent-karen
 
+### NOTE: Karen is under active development and not ready to be used yet
+
 <img width="437" height="493" alt="image" src="https://github.com/user-attachments/assets/0511a49e-d551-4e06-a680-937f4250a413" />
 
 *keeping your agents on a short leash since 2025.*
