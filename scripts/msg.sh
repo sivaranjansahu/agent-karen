@@ -19,7 +19,7 @@ MSG="${2:?Usage: msg.sh <role> \"<message>\" [type]}"
 TYPE="${3:-message}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-AGENT_DIR="$(pwd)/.agent"
+AGENT_DIR="$ROOT"
 
 INBOX="$AGENT_DIR/inbox/${ROLE}.jsonl"
 SURFACE_FILE="$AGENT_DIR/state/${ROLE}_surface"

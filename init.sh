@@ -243,6 +243,10 @@ ln -sfn "$SCAFFOLD_ROOT/scripts" "$PROJECT_DIR/.agent/scripts"
 ln -sfn "$SCAFFOLD_ROOT/hooks" "$PROJECT_DIR/.agent/hooks"
 echo "  ✓ Linked .agent/scripts and .agent/hooks → scaffold"
 
+# Create visible symlink for Obsidian/editors that hide dotfiles
+ln -sfn ".agent" "$PROJECT_DIR/agent-karen"
+echo "  ✓ Created agent-karen → .agent (visible in Obsidian)"
+
 # ── 8. Make scripts executable ────────────────────────────────────────────────
 
 chmod +x "$SCAFFOLD_ROOT/bootstrap.sh" "$SCAFFOLD_ROOT/init.sh" 2>/dev/null

@@ -24,16 +24,25 @@ export AGENT_SCAFFOLD_ROOT="$ROOT"
 source "$ROOT/lib/mux.sh"
 
 # Resolve role file — 3-tier lookup: project-local → custom-roles → defaults
-# Also handles devN → dev.md fallback
+# Handles: devN → dev, makerpad-messenger → messenger, makerpad-dev1 → dev
 ROLE_FILE=""
 BASE_ROLE="${ROLE%%[0-9]*}"
+# Strip project prefix (e.g., makerpad-messenger → messenger)
+SHORT_ROLE="${ROLE#*-}"
+SHORT_BASE="${SHORT_ROLE%%[0-9]*}"
 for CANDIDATE in \
   "$WORKDIR/.agent-roles/${ROLE}.md" \
   "$WORKDIR/.agent-roles/${BASE_ROLE}.md" \
+  "$WORKDIR/.agent-roles/${SHORT_ROLE}.md" \
+  "$WORKDIR/.agent-roles/${SHORT_BASE}.md" \
   "$ROOT/custom-roles/${ROLE}.md" \
   "$ROOT/custom-roles/${BASE_ROLE}.md" \
+  "$ROOT/custom-roles/${SHORT_ROLE}.md" \
+  "$ROOT/custom-roles/${SHORT_BASE}.md" \
   "$ROOT/roles/${ROLE}.md" \
-  "$ROOT/roles/${BASE_ROLE}.md"; do
+  "$ROOT/roles/${BASE_ROLE}.md" \
+  "$ROOT/roles/${SHORT_ROLE}.md" \
+  "$ROOT/roles/${SHORT_BASE}.md"; do
   if [[ -f "$CANDIDATE" ]]; then
     ROLE_FILE="$CANDIDATE"
     break
@@ -77,7 +86,7 @@ cd "$WORKDIR" && \
   export AGENT_SCAFFOLD_ROOT="$ROOT" && \
   cp "$ROLE_FILE" CLAUDE.md && \
   bd quickstart 2>/dev/null || true && \
-  claude "You have been activated as $ROLE. Orient yourself in this order:
+  claude --dangerously-skip-permissions "You have been activated as $ROLE. Orient yourself in this order:
 1. Read CLAUDE.md for your role instructions.
 2. Read .agent/memory/shared.md for cross-agent shared context.
 3. If .agent/memory/${ROLE}.md exists, read it for your role-specific memory from prior sessions.

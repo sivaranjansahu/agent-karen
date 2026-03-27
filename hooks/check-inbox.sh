@@ -9,6 +9,28 @@
 ROLE="${AGENT_ROLE:-}"
 [[ -z "$ROLE" ]] && exit 0
 
+# Poll Telegram for new messages — but SKIP if daemon is already running (avoids cursor race)
+TELEGRAM_PID_FILE=".agent/state/telegram_daemon.pid"
+TELEGRAM_POLL=".agent/scripts/telegram-poll.sh"
+if [[ -x "$TELEGRAM_POLL" ]]; then
+  if [[ -f "$TELEGRAM_PID_FILE" ]] && kill -0 "$(cat "$TELEGRAM_PID_FILE")" 2>/dev/null; then
+    : # daemon is running, skip manual poll
+  else
+    "$TELEGRAM_POLL" once 2>/dev/null || true
+  fi
+fi
+
+# Poll Slack for new messages — but SKIP if daemon is already running (avoids cursor race)
+SLACK_PID_FILE=".agent/state/slack_daemon.pid"
+SLACK_POLL=".agent/scripts/slack-poll.sh"
+if [[ -x "$SLACK_POLL" ]]; then
+  if [[ -f "$SLACK_PID_FILE" ]] && kill -0 "$(cat "$SLACK_PID_FILE")" 2>/dev/null; then
+    : # daemon is running, skip manual poll
+  else
+    "$SLACK_POLL" once 2>/dev/null || true
+  fi
+fi
+
 INBOX=".agent/inbox/${ROLE}.jsonl"
 [[ -f "$INBOX" ]] || exit 0
 
