@@ -7,7 +7,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-AGENT_DIR="$ROOT"
+# Use KAREN_PROJECT_AGENT_DIR (set by spawn.sh) > pwd/.agent > scaffold root
+if [[ -n "${KAREN_PROJECT_AGENT_DIR:-}" && -d "$KAREN_PROJECT_AGENT_DIR" ]]; then
+  AGENT_DIR="$KAREN_PROJECT_AGENT_DIR"
+elif [[ -d "$(pwd)/.agent" ]]; then
+  AGENT_DIR="$(pwd)/.agent"
+else
+  AGENT_DIR="$ROOT"
+fi
 STATE="$AGENT_DIR/state"
 
 # Load multiplexer abstraction
@@ -49,7 +56,8 @@ for ws_file in "$STATE"/*_workspace; do
   fi
 
   # Check last outbound message from this role in comms
-  LAST_SENT=$(grep -c "\`$ROLE\` →" "$AGENT_DIR/communications.md" 2>/dev/null || echo "0")
+  COMMS="$AGENT_DIR/communications.md"
+  LAST_SENT=$(grep -c "\`$ROLE\` →" "$COMMS" 2>/dev/null || echo "0")
 
   if [[ "$STATUS" == "UP" ]]; then
     echo "  ✓ $ROLE  $WS_ID  $SF_ID  (inbox: $MSG_COUNT msgs, sent: $LAST_SENT msgs)"

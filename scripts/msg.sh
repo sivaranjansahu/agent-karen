@@ -19,7 +19,15 @@ MSG="${2:?Usage: msg.sh <role> \"<message>\" [type]}"
 TYPE="${3:-message}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-AGENT_DIR="$ROOT"
+# AGENT_DIR must point to the PROJECT's .agent/ dir, not the scaffold's.
+# Priority: env var (set by spawn.sh) > pwd/.agent > scaffold root (standalone).
+if [[ -n "${KAREN_PROJECT_AGENT_DIR:-}" && -d "$KAREN_PROJECT_AGENT_DIR" ]]; then
+  AGENT_DIR="$KAREN_PROJECT_AGENT_DIR"
+elif [[ -d "$(pwd)/.agent" ]]; then
+  AGENT_DIR="$(pwd)/.agent"
+else
+  AGENT_DIR="$ROOT"
+fi
 
 INBOX="$AGENT_DIR/inbox/${ROLE}.jsonl"
 SURFACE_FILE="$AGENT_DIR/state/${ROLE}_surface"
@@ -63,13 +71,19 @@ if [[ -f "$MM_ENV" ]]; then
 fi
 
 # 4. Push-trigger: wake the target terminal
+export KAREN_PROJECT_AGENT_DIR="$AGENT_DIR"
 source "$ROOT/lib/mux.sh"
 WS_FILE="$AGENT_DIR/state/${ROLE}_workspace"
 if [[ -f "$WS_FILE" ]]; then
-  PROMPT="📬 New $TYPE from $FROM. Check .agent/inbox/${ROLE}.jsonl and respond."
+  PROMPT="📬 New $TYPE from $FROM. Check ${AGENT_DIR}/inbox/${ROLE}.jsonl and respond."
   mux_send "$ROLE" "$PROMPT" 2>/dev/null && \
     echo "✓ Woke $ROLE" || \
     echo "⚠ Send failed — message queued in inbox"
 else
-  echo "⚠ No workspace for $ROLE — message queued in inbox"
+  # Fallback: try to find workspace via mux_list before giving up
+  if mux_list 2>/dev/null | grep -q "$ROLE"; then
+    echo "⚠ State file missing but $ROLE appears alive — message queued in inbox"
+  else
+    echo "⚠ No workspace for $ROLE — message queued in inbox"
+  fi
 fi

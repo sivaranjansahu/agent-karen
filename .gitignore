@@ -11,7 +11,8 @@
 .agent/knowledge/*
 !.agent/knowledge/.gitkeep
 
-# Dolt database files (beads)
+# Beads — generated per project, not part of the scaffold
+.beads/
 .dolt/
 *.db
 

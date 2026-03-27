@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template: replace __PROJECT_DIR__ with your project's absolute path.
+  Example: sed 's|__PROJECT_DIR__|/Users/you/myproject|g' com.karen.slack-daemon.plist > ~/Library/LaunchAgents/com.karen.slack-daemon.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.karen.slack-daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PROJECT_DIR__/.agent/scripts/slack-daemon.sh</string>
+        <string>start</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_DIR__</string>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__PROJECT_DIR__/.agent/state/slack_launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>__PROJECT_DIR__/.agent/state/slack_launchd.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+</dict>
+</plist>
