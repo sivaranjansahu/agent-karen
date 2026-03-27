@@ -144,7 +144,9 @@ cd "$WORKDIR" && \
 5. Read .agent/inbox/${ROLE}.jsonl for your task context.
 6. Begin working immediately.
 
-CRITICAL PATH INFO: The scaffold scripts are at $ROOT/scripts/. When your role file says \\\$AGENT_SCAFFOLD_ROOT/scripts/msg.sh, use this actual path: $ROOT/scripts/msg.sh. Similarly for spawn.sh, health.sh, shutdown.sh.
+CRITICAL PATH INFO: The scaffold scripts are at $ROOT/scripts/. When your role file says \\\$AGENT_SCAFFOLD_ROOT/scripts/msg.sh, use this actual path: $ROOT/scripts/msg.sh. Similarly for spawn.sh, health.sh, shutdown.sh, wake.sh.
+
+NEVER call cmux send directly — it requires a newline suffix that is easy to forget, causing text to sit in the input without submitting. Always use msg.sh (for inbox + logging + wake) or wake.sh (for raw terminal text). Both handle the newline automatically.
 
 ENV VARS: KAREN_PROJECT_AGENT_DIR=$WORKDIR/.agent — use this for all .agent/ paths (inbox, state, memory, comms). AGENT_SCAFFOLD_ROOT=$ROOT — use this for scaffold scripts only.
 

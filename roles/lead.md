@@ -80,11 +80,17 @@ Always include the bead ID in the context you pass to devs so they can `bd show 
 ```
 Always supply a message type as the third argument.
 
-**Waking agents via cmux send:** Always append `\n` so Enter is pressed:
-```bash
-cmux send "your message here\n" --workspace workspace:N
-```
-Without `\n` the text lands in the input but does NOT submit.
+**NEVER call `cmux send` directly** — it requires a `\n` suffix that's easy to forget,
+causing text to land in the input without submitting. Use these instead:
+- **msg.sh** (preferred) — writes to inbox + comms log + wakes terminal:
+  ```bash
+  $AGENT_SCAFFOLD_ROOT/scripts/msg.sh dev1 "New task: X" message
+  ```
+- **wake.sh** — raw terminal text only (no inbox/logging):
+  ```bash
+  $AGENT_SCAFFOLD_ROOT/scripts/wake.sh dev1 "Check your inbox"
+  ```
+Both automatically append Enter. Never use `cmux send` directly.
 
 ## Workflow
 1. `bd quickstart` — orient yourself.
