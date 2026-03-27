@@ -30,3 +30,5 @@ custom-roles/
 
 # Generated at runtime by bootstrap/spawn
 CLAUDE.md
+
+.agents
