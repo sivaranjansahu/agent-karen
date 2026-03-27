@@ -49,6 +49,12 @@
 
       "Bash(bd *)",
 
+      "Bash(cmux *)",
+
+      "Bash(.agent/scripts/*)",
+      "Bash(bash .agent/scripts/*)",
+      "Bash(bash tests/*)",
+
       "Bash(karen *)",
 
       "Bash(npm run *)",
