@@ -73,12 +73,38 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 TS_HUMAN=$(date "+%Y-%m-%d %H:%M:%S UTC")
 
 WS_FILE="$HUB_DIR/state/${AGENT_ID}_workspace"
+DISPLAY_NAME="${PROJECT_KEY}:${SHORT_ROLE}"
 AGENT_ALIVE=false
+EXISTING_WS=""
+
 if [[ -f "$WS_FILE" ]]; then
   EXISTING_WS=$(cat "$WS_FILE")
   ACTIVE_WS=$(mux_list 2>/dev/null || true)
-  if echo "$ACTIVE_WS" | grep -qE "$EXISTING_WS|$AGENT_ID"; then
+  # Match by workspace ID, agent ID, or display name (project:role)
+  if echo "$ACTIVE_WS" | grep -qE "$EXISTING_WS|$AGENT_ID|$DISPLAY_NAME"; then
     AGENT_ALIVE=true
+  fi
+else
+  # No state file — still check if a tab with this name exists (leftover from old spawn)
+  ACTIVE_WS=$(mux_list 2>/dev/null || true)
+  if echo "$ACTIVE_WS" | grep -qE "$AGENT_ID|$DISPLAY_NAME|$SHORT_ROLE"; then
+    # Found a matching workspace — try to recover its ID
+    EXISTING_WS=$(echo "$ACTIVE_WS" | grep -oE 'workspace:[0-9]+' | head -1 || true)
+    if [[ -n "$EXISTING_WS" ]]; then
+      echo "$EXISTING_WS" > "$WS_FILE"
+      AGENT_ALIVE=true
+    fi
+  fi
+fi
+
+# If agent is detected as alive but can't be woken, kill it and respawn fresh
+if $AGENT_ALIVE && [[ -n "$EXISTING_WS" ]]; then
+  # Try to wake — if send fails, the workspace might be zombie
+  if ! mux_send "$AGENT_ID" "ping" 2>/dev/null; then
+    echo "▸ $AGENT_ID workspace exists but unresponsive — killing and respawning"
+    mux_close "$AGENT_ID" 2>/dev/null || true
+    rm -f "$WS_FILE" "$HUB_DIR/state/${AGENT_ID}_surface"
+    AGENT_ALIVE=false
   fi
 fi
 
