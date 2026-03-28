@@ -52,6 +52,9 @@ case "$CMD" in
   shutdown|kill)
     exec "$ROOT/scripts/shutdown.sh" "$@"
     ;;
+  clean)
+    exec "$ROOT/scripts/clean.sh" "$@"
+    ;;
   status)
     exec "$ROOT/scripts/status.sh" "$@"
     ;;
