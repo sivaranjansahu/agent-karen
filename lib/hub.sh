@@ -57,13 +57,15 @@ extract_role() {
 }
 
 # ── Extract project key from agent ID ────────────────────────────────────────
-# "prepare-dev1" -> "prepare"
+# "prepare-dev1" -> "prepare", bare "manager" -> $KAREN_PROJECT_KEY or ""
 extract_project_key() {
   local AGENT_ID="$1"
-  if [[ "$AGENT_ID" == *-* ]]; then
+  if [[ -n "${KAREN_PROJECT_KEY:-}" ]]; then
+    echo "$KAREN_PROJECT_KEY"
+  elif [[ "$AGENT_ID" == *-* ]]; then
     echo "${AGENT_ID%%-*}"
   else
-    echo "${KAREN_PROJECT_KEY:-unknown}"
+    echo ""
   fi
 }
 
@@ -74,6 +76,7 @@ get_sender_id() {
   elif [[ -n "${KAREN_PROJECT_KEY:-}" && -n "${AGENT_ROLE:-}" ]]; then
     echo "${KAREN_PROJECT_KEY}-${AGENT_ROLE}"
   elif [[ -n "${AGENT_ROLE:-}" ]]; then
+    # No project context (legacy/old-model agents) — use bare role
     echo "$AGENT_ROLE"
   else
     echo "manager"
