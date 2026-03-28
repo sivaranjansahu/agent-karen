@@ -14,6 +14,15 @@ resolve_hub_dir() {
   elif [[ -d "$(pwd)/.agent" ]]; then
     echo "$(pwd)/.agent"
   else
+    # Last resort: walk up from pwd to find .agent/ (handles agents that cd'd during work)
+    local DIR="$(pwd)"
+    while [[ "$DIR" != "/" ]]; do
+      if [[ -d "$DIR/.agent/inbox" ]]; then
+        echo "$DIR/.agent"
+        return 0
+      fi
+      DIR="$(dirname "$DIR")"
+    done
     echo "ERROR: No hub or .agent/ directory found. Set KAREN_HUB_DIR or run 'karen up'." >&2
     return 1
   fi
