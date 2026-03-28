@@ -4,15 +4,10 @@
 
 set -euo pipefail
 
-# Resolve project .agent/ dir: env var > pwd/.agent > error
-if [[ -n "${KAREN_PROJECT_AGENT_DIR:-}" && -d "$KAREN_PROJECT_AGENT_DIR" ]]; then
-  AGENT_DIR="$KAREN_PROJECT_AGENT_DIR"
-elif [[ -d "$(pwd)/.agent" ]]; then
-  AGENT_DIR="$(pwd)/.agent"
-else
-  echo "ERROR: No .agent/ directory found. Run from project root or set KAREN_PROJECT_AGENT_DIR." >&2
-  exit 1
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+source "$ROOT/lib/hub.sh"
+AGENT_DIR=$(resolve_hub_dir) || exit 1
 MODE="${1:-once}"
 
 check_agents() {

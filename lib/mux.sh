@@ -16,9 +16,10 @@ set -euo pipefail
 
 _MUX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _MUX_ROOT="$(cd "$_MUX_DIR/.." && pwd)"
-# State lives in the project's .agent/ dir.
-# Priority: KAREN_PROJECT_AGENT_DIR (set by spawn.sh) > pwd/.agent > scaffold root
-if [[ -n "${KAREN_PROJECT_AGENT_DIR:-}" && -d "$KAREN_PROJECT_AGENT_DIR" ]]; then
+# State lives in the central hub
+if [[ -n "${KAREN_HUB_DIR:-}" ]]; then
+  STATE="$KAREN_HUB_DIR/state"
+elif [[ -n "${KAREN_PROJECT_AGENT_DIR:-}" && -d "$KAREN_PROJECT_AGENT_DIR" ]]; then
   STATE="$KAREN_PROJECT_AGENT_DIR/state"
 elif [[ -d "$(pwd)/.agent" ]]; then
   STATE="$(pwd)/.agent/state"

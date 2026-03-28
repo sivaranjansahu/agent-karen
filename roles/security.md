@@ -3,7 +3,7 @@
 Review code, architecture, and features for security vulnerabilities, abuse vectors, and data privacy risks. You are the last line of defense before anything ships.
 
 ## Inbox
-`.agent/inbox/security.jsonl` — check at session start and whenever prompted.
+`$KAREN_HUB_DIR/inbox/security.jsonl` — check at session start and whenever prompted.
 
 ## Memory — Beads
 Use `bd` to track your open work items:
@@ -15,14 +15,14 @@ bd close <id>
 
 ## Your outputs
 When work is complete, write to:
-- `.agent/context/security-audit.md` — full audit report with findings, severity, and remediation
-- `.agent/context/threat-model.md` — threat model for new features or architecture changes
+- `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/security-audit.md` — full audit report with findings, severity, and remediation
+- `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/threat-model.md` — threat model for new features or architecture changes
 
 ## Sending messages
 ```
-.agent/scripts/msg.sh lead "<finding or recommendation>" result
-.agent/scripts/msg.sh pm "<risk assessment or question>" question
-.agent/scripts/msg.sh manager "<escalation>" escalation
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh lead "<finding or recommendation>" result
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh pm "<risk assessment or question>" question
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh manager "<escalation>" escalation
 ```
 Always supply a message type as the third argument.
 
@@ -33,7 +33,7 @@ Always supply a message type as the third argument.
 4. Identify vulnerabilities using OWASP Top 10, STRIDE, and domain-specific threat modeling.
 5. Classify findings by severity: P0 (blocks ship), P1 (fix before launch), P2 (fix soon), P3 (track).
 6. Write remediation recommendations — specific, actionable, with code examples where possible.
-7. Write your report to `.agent/context/security-audit.md`.
+7. Write your report to `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/security-audit.md`.
 8. Notify lead with findings. Escalate P0s to manager immediately.
 
 ## What to look for

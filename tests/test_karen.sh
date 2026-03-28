@@ -155,12 +155,30 @@ MOCK
   export PATH="$MOCK_BIN:$ORIG_PATH"
   export AGENT_MUX_BACKEND="cmux"
   mkdir -p "$TEST_TMPDIR/project"
+
+  # Central hub setup
+  export KAREN_HUB_DIR="$TEST_TMPDIR/hub"
+  mkdir -p "$KAREN_HUB_DIR/inbox" "$KAREN_HUB_DIR/state" "$KAREN_HUB_DIR/memory" "$KAREN_HUB_DIR/context" "$KAREN_HUB_DIR/knowledge"
+  echo "# Shared Memory" > "$KAREN_HUB_DIR/memory/shared.md"
+  cat > "$KAREN_HUB_DIR/communications.md" << 'COMMS'
+# Agent Communications Log
+> Test session
+
+---
+
+COMMS
+  export KAREN_PROJECT_KEY="test"
+  export KAREN_PROJECT_DIR="$TEST_TMPDIR/project"
 }
 
 teardown() {
   export PATH="$ORIG_PATH"
   unset AGENT_MUX_BACKEND
   unset AGENT_ROLE
+  unset KAREN_HUB_DIR
+  unset KAREN_AGENT_ID
+  unset KAREN_PROJECT_KEY
+  unset KAREN_PROJECT_DIR
   if [[ -n "$TEST_TMPDIR" && -d "$TEST_TMPDIR" ]]; then
     rm -rf "$TEST_TMPDIR"
   fi
@@ -221,21 +239,21 @@ test_init_stores_scaffold_root() {
 
 test_init_is_idempotent() {
   "$SCAFFOLD_ROOT/init.sh" "$TEST_TMPDIR/project" >/dev/null 2>&1
-  echo '{"test":"data"}' > "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
+  echo '{"test":"data"}' > "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
   local comms_before
-  comms_before=$(cat "$TEST_TMPDIR/project/.agent/communications.md")
+  comms_before=$(cat "$KAREN_HUB_DIR/communications.md")
 
   "$SCAFFOLD_ROOT/init.sh" "$TEST_TMPDIR/project" >/dev/null 2>&1
 
   # Inbox should survive
-  assert_file_exists "inbox survives re-init" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
+  assert_file_exists "inbox survives re-init" "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
   local inbox_content
-  inbox_content=$(cat "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl")
+  inbox_content=$(cat "$KAREN_HUB_DIR/inbox/test-pm.jsonl")
   assert_contains "inbox data preserved" "$inbox_content" '{"test":"data"}'
 
   # communications.md should NOT be overwritten
   local comms_after
-  comms_after=$(cat "$TEST_TMPDIR/project/.agent/communications.md")
+  comms_after=$(cat "$KAREN_HUB_DIR/communications.md")
   assert_eq "comms not overwritten" "$comms_before" "$comms_after"
 }
 
@@ -298,10 +316,10 @@ test_msg_creates_inbox_entry() {
 
   "$SCAFFOLD_ROOT/scripts/msg.sh" pm "Hello PM, write a brief" message >/dev/null 2>&1
 
-  assert_file_exists "pm inbox created" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
-  assert_json_field "from field" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 1 "from" "manager"
-  assert_json_field "type field" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 1 "type" "message"
-  assert_json_field "body field" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 1 "body" "Hello PM, write a brief"
+  assert_file_exists "pm inbox created" "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
+  assert_json_field "from field" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 1 "from" "test-manager"
+  assert_json_field "type field" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 1 "type" "message"
+  assert_json_field "body field" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 1 "body" "Hello PM, write a brief"
 }
 
 test_msg_appends_to_communications_log() {
@@ -312,9 +330,9 @@ test_msg_appends_to_communications_log() {
   "$SCAFFOLD_ROOT/scripts/msg.sh" dev1 "Implement auth module" result >/dev/null 2>&1
 
   local comms
-  comms=$(cat "$TEST_TMPDIR/project/.agent/communications.md")
-  assert_contains "sender in comms" "$comms" '`lead`'
-  assert_contains "recipient in comms" "$comms" '`dev1`'
+  comms=$(cat "$KAREN_HUB_DIR/communications.md")
+  assert_contains "sender in comms" "$comms" '`test-lead`'
+  assert_contains "recipient in comms" "$comms" '`test-dev1`'
   assert_contains "type in comms" "$comms" "(result)"
   assert_contains "body in comms" "$comms" "Implement auth module"
 }
@@ -326,7 +344,7 @@ test_msg_default_type_is_message() {
 
   "$SCAFFOLD_ROOT/scripts/msg.sh" manager "Brief done" >/dev/null 2>&1
 
-  assert_json_field "default type" "$TEST_TMPDIR/project/.agent/inbox/manager.jsonl" 1 "type" "message"
+  assert_json_field "default type" "$KAREN_HUB_DIR/inbox/test-manager.jsonl" 1 "type" "message"
 }
 
 test_msg_multiple_messages_append() {
@@ -338,19 +356,20 @@ test_msg_multiple_messages_append() {
   "$SCAFFOLD_ROOT/scripts/msg.sh" pm "Second message" >/dev/null 2>&1
   "$SCAFFOLD_ROOT/scripts/msg.sh" pm "Third message" >/dev/null 2>&1
 
-  assert_line_count "3 messages in inbox" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" "3"
-  assert_json_field "msg 1 body" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 1 "body" "First message"
-  assert_json_field "msg 3 body" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 3 "body" "Third message"
+  assert_line_count "3 messages in inbox" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" "3"
+  assert_json_field "msg 1 body" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 1 "body" "First message"
+  assert_json_field "msg 3 body" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 3 "body" "Third message"
 }
 
 test_msg_defaults_from_to_manager() {
   _setup_initialized_project
   cd "$TEST_TMPDIR/project"
   unset AGENT_ROLE
+  unset KAREN_AGENT_ID
 
   "$SCAFFOLD_ROOT/scripts/msg.sh" qa "Run tests" >/dev/null 2>&1
 
-  assert_json_field "defaults to manager" "$TEST_TMPDIR/project/.agent/inbox/qa.jsonl" 1 "from" "manager"
+  assert_json_field "defaults to manager" "$KAREN_HUB_DIR/inbox/test-qa.jsonl" 1 "from" "manager"
 }
 
 test_msg_all_types_accepted() {
@@ -362,7 +381,7 @@ test_msg_all_types_accepted() {
     "$SCAFFOLD_ROOT/scripts/msg.sh" dev1 "type test: $TYPE" "$TYPE" >/dev/null 2>&1
   done
 
-  assert_line_count "5 typed messages" "$TEST_TMPDIR/project/.agent/inbox/dev1.jsonl" "5"
+  assert_line_count "5 typed messages" "$KAREN_HUB_DIR/inbox/test-dev1.jsonl" "5"
 }
 
 test_msg_timestamp_is_iso8601() {
@@ -373,7 +392,7 @@ test_msg_timestamp_is_iso8601() {
   "$SCAFFOLD_ROOT/scripts/msg.sh" pm "timestamp test" >/dev/null 2>&1
 
   local ts
-  ts=$(head -1 "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" | python3 -c "import sys,json; print(json.load(sys.stdin)['ts'])")
+  ts=$(head -1 "$KAREN_HUB_DIR/inbox/test-pm.jsonl" | python3 -c "import sys,json; print(json.load(sys.stdin)['ts'])")
   if [[ "$ts" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
     PASS=$((PASS + 1))
   else
@@ -390,7 +409,7 @@ test_msg_special_characters_in_body() {
   "$SCAFFOLD_ROOT/scripts/msg.sh" pm 'Message with "quotes" and $vars and `backticks`' >/dev/null 2>&1
 
   local body
-  body=$(head -1 "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" | python3 -c "import sys,json; print(json.load(sys.stdin)['body'])")
+  body=$(head -1 "$KAREN_HUB_DIR/inbox/test-pm.jsonl" | python3 -c "import sys,json; print(json.load(sys.stdin)['body'])")
   assert_contains "quotes preserved" "$body" '"quotes"'
   assert_contains "dollar preserved" "$body" '$vars'
 }
@@ -403,7 +422,7 @@ test_msg_no_workspace_queues_in_inbox() {
   local output
   output=$("$SCAFFOLD_ROOT/scripts/msg.sh" qa "test" 2>&1)
 
-  assert_file_exists "inbox created even without workspace" "$TEST_TMPDIR/project/.agent/inbox/qa.jsonl"
+  assert_file_exists "inbox created even without workspace" "$KAREN_HUB_DIR/inbox/test-qa.jsonl"
   assert_contains "queued warning" "$output" "queued in inbox"
 }
 
@@ -427,10 +446,10 @@ test_spawn_writes_init_message() {
 
   "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "Build an invoicing SaaS" "$TEST_TMPDIR/project" >/dev/null 2>&1
 
-  assert_file_exists "pm inbox" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
-  assert_json_field "init from" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 1 "from" "system"
-  assert_json_field "init type" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 1 "type" "init"
-  assert_json_field "init body" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 1 "body" "Build an invoicing SaaS"
+  assert_file_exists "pm inbox" "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
+  assert_json_field "init from" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 1 "from" "system"
+  assert_json_field "init type" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 1 "type" "init"
+  assert_json_field "init body" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 1 "body" "Build an invoicing SaaS"
 }
 
 test_spawn_logs_to_communications() {
@@ -441,11 +460,11 @@ test_spawn_logs_to_communications() {
   "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "Build SaaS" "$TEST_TMPDIR/project" >/dev/null 2>&1
 
   local comms
-  comms=$(cat "$TEST_TMPDIR/project/.agent/communications.md")
+  comms=$(cat "$KAREN_HUB_DIR/communications.md")
   assert_contains "spawn logged" "$comms" "(spawn)"
   assert_contains "spawn context" "$comms" "Build SaaS"
-  assert_contains "spawn sender" "$comms" '`manager`'
-  assert_contains "spawn recipient" "$comms" '`pm`'
+  assert_contains "spawn sender" "$comms" '`test-manager`'
+  assert_contains "spawn recipient" "$comms" '`test-pm`'
 }
 
 test_spawn_copies_role_to_claude_md() {
@@ -460,8 +479,8 @@ test_spawn_copies_role_to_claude_md() {
   output=$("$SCAFFOLD_ROOT/scripts/spawn.sh" qa "test" "$TEST_TMPDIR/project" 2>&1)
 
   # Verify the spawn succeeded (init message written)
-  assert_file_exists "qa inbox" "$TEST_TMPDIR/project/.agent/inbox/qa.jsonl"
-  assert_json_field "init type" "$TEST_TMPDIR/project/.agent/inbox/qa.jsonl" 1 "type" "init"
+  assert_file_exists "qa inbox" "$KAREN_HUB_DIR/inbox/test-qa.jsonl"
+  assert_json_field "init type" "$KAREN_HUB_DIR/inbox/test-qa.jsonl" 1 "type" "init"
 }
 
 test_spawn_role_lookup_project_local_wins() {
@@ -477,7 +496,7 @@ test_spawn_role_lookup_project_local_wins() {
 
   # If project-local role was found, spawn succeeds and init message is written
   assert_eq "spawn succeeds with project-local role" "0" "$rc"
-  assert_file_exists "pm inbox" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
+  assert_file_exists "pm inbox" "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
 }
 
 test_spawn_role_lookup_falls_back_to_defaults() {
@@ -489,7 +508,7 @@ test_spawn_role_lookup_falls_back_to_defaults() {
   "$SCAFFOLD_ROOT/scripts/spawn.sh" security "test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
 
   assert_eq "spawn succeeds with default role" "0" "$rc"
-  assert_file_exists "security inbox" "$TEST_TMPDIR/project/.agent/inbox/security.jsonl"
+  assert_file_exists "security inbox" "$KAREN_HUB_DIR/inbox/test-security.jsonl"
 }
 
 test_spawn_devN_falls_back_to_dev_md() {
@@ -501,7 +520,7 @@ test_spawn_devN_falls_back_to_dev_md() {
   "$SCAFFOLD_ROOT/scripts/spawn.sh" dev3 "Implement feature X" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
 
   assert_eq "dev3 spawn succeeds via dev.md fallback" "0" "$rc"
-  assert_file_exists "dev3 inbox" "$TEST_TMPDIR/project/.agent/inbox/dev3.jsonl"
+  assert_file_exists "dev3 inbox" "$KAREN_HUB_DIR/inbox/test-dev3.jsonl"
 }
 
 test_spawn_unknown_role_fails() {
@@ -525,7 +544,7 @@ test_spawn_role_lookup_custom_roles_tier() {
   "$SCAFFOLD_ROOT/scripts/spawn.sh" architect "test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
 
   assert_eq "spawn succeeds with custom-roles tier" "0" "$rc"
-  assert_file_exists "architect inbox" "$TEST_TMPDIR/project/.agent/inbox/architect.jsonl"
+  assert_file_exists "architect inbox" "$KAREN_HUB_DIR/inbox/test-architect.jsonl"
 
   rm -rf "$SCAFFOLD_ROOT/custom-roles"
 }
@@ -538,45 +557,45 @@ test_shutdown_specific_role() {
   _setup_initialized_project
   cd "$TEST_TMPDIR/project"
 
-  echo "workspace:1001" > "$TEST_TMPDIR/project/.agent/state/pm_workspace"
-  echo "surface:2001" > "$TEST_TMPDIR/project/.agent/state/pm_surface"
+  echo "workspace:1001" > "$KAREN_HUB_DIR/state/test-pm_workspace"
+  echo "surface:2001" > "$KAREN_HUB_DIR/state/test-pm_surface"
 
   "$SCAFFOLD_ROOT/scripts/shutdown.sh" pm >/dev/null 2>&1
 
   local comms
-  comms=$(cat "$TEST_TMPDIR/project/.agent/communications.md")
+  comms=$(cat "$KAREN_HUB_DIR/communications.md")
   assert_contains "shutdown logged" "$comms" "(shutdown)"
-  assert_contains "shutdown target" "$comms" '`pm`'
+  assert_contains "shutdown target" "$comms" '`test-pm`'
 }
 
 test_shutdown_all() {
   _setup_initialized_project
   cd "$TEST_TMPDIR/project"
 
-  echo "ws:1" > "$TEST_TMPDIR/project/.agent/state/pm_workspace"
-  echo "ws:2" > "$TEST_TMPDIR/project/.agent/state/dev1_workspace"
-  echo "ws:3" > "$TEST_TMPDIR/project/.agent/state/qa_workspace"
+  echo "ws:1" > "$KAREN_HUB_DIR/state/test-pm_workspace"
+  echo "ws:2" > "$KAREN_HUB_DIR/state/test-dev1_workspace"
+  echo "ws:3" > "$KAREN_HUB_DIR/state/test-qa_workspace"
 
   "$SCAFFOLD_ROOT/scripts/shutdown.sh" --all >/dev/null 2>&1
 
   local comms
-  comms=$(cat "$TEST_TMPDIR/project/.agent/communications.md")
-  assert_contains "pm shutdown" "$comms" '`pm`'
-  assert_contains "dev1 shutdown" "$comms" '`dev1`'
-  assert_contains "qa shutdown" "$comms" '`qa`'
+  comms=$(cat "$KAREN_HUB_DIR/communications.md")
+  assert_contains "pm shutdown" "$comms" '`test-pm`'
+  assert_contains "dev1 shutdown" "$comms" '`test-dev1`'
+  assert_contains "qa shutdown" "$comms" '`test-qa`'
 }
 
 test_shutdown_cleans_workspace_files() {
   _setup_initialized_project
   cd "$TEST_TMPDIR/project"
 
-  echo "workspace:1001" > "$TEST_TMPDIR/project/.agent/state/pm_workspace"
-  echo "surface:2001" > "$TEST_TMPDIR/project/.agent/state/pm_surface"
+  echo "workspace:1001" > "$KAREN_HUB_DIR/state/test-pm_workspace"
+  echo "surface:2001" > "$KAREN_HUB_DIR/state/test-pm_surface"
 
   "$SCAFFOLD_ROOT/scripts/shutdown.sh" pm >/dev/null 2>&1
 
-  assert_file_not_exists "workspace removed" "$TEST_TMPDIR/project/.agent/state/pm_workspace"
-  assert_file_not_exists "surface removed" "$TEST_TMPDIR/project/.agent/state/pm_surface"
+  assert_file_not_exists "workspace removed" "$KAREN_HUB_DIR/state/test-pm_workspace"
+  assert_file_not_exists "surface removed" "$KAREN_HUB_DIR/state/test-pm_surface"
 }
 
 test_shutdown_nonexistent_role_warns() {
@@ -601,14 +620,14 @@ test_shutdown_preserves_inbox_and_memory() {
   _setup_initialized_project
   cd "$TEST_TMPDIR/project"
 
-  echo '{"from":"manager","type":"message","body":"task"}' > "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
-  echo "# PM Memory" > "$TEST_TMPDIR/project/.agent/memory/pm.md"
-  echo "workspace:1001" > "$TEST_TMPDIR/project/.agent/state/pm_workspace"
+  echo '{"from":"manager","type":"message","body":"task"}' > "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
+  echo "# PM Memory" > "$KAREN_HUB_DIR/memory/test-pm.md"
+  echo "workspace:1001" > "$KAREN_HUB_DIR/state/test-pm_workspace"
 
   "$SCAFFOLD_ROOT/scripts/shutdown.sh" pm >/dev/null 2>&1
 
-  assert_file_exists "inbox preserved" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
-  assert_file_exists "memory preserved" "$TEST_TMPDIR/project/.agent/memory/pm.md"
+  assert_file_exists "inbox preserved" "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
+  assert_file_exists "memory preserved" "$KAREN_HUB_DIR/memory/test-pm.md"
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -619,9 +638,9 @@ test_health_reports_all_agents() {
   _setup_initialized_project
   cd "$TEST_TMPDIR/project"
 
-  echo "workspace:1001" > "$TEST_TMPDIR/project/.agent/state/pm_workspace"
-  echo "surface:2001" > "$TEST_TMPDIR/project/.agent/state/pm_surface"
-  echo '{"from":"manager","type":"init","ts":"2026-01-01T00:00:00Z","body":"test"}' > "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
+  echo "workspace:1001" > "$KAREN_HUB_DIR/state/test-pm_workspace"
+  echo "surface:2001" > "$KAREN_HUB_DIR/state/test-pm_surface"
+  echo '{"from":"manager","type":"init","ts":"2026-01-01T00:00:00Z","body":"test"}' > "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
 
   local output
   output=$("$SCAFFOLD_ROOT/scripts/health.sh" 2>&1)
@@ -642,9 +661,9 @@ test_health_shows_inbox_count() {
   _setup_initialized_project
   cd "$TEST_TMPDIR/project"
 
-  echo "workspace:1001" > "$TEST_TMPDIR/project/.agent/state/pm_workspace"
-  echo '{"from":"a","type":"message","ts":"2026-01-01T00:00:00Z","body":"msg1"}' > "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
-  echo '{"from":"b","type":"message","ts":"2026-01-01T00:00:01Z","body":"msg2"}' >> "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
+  echo "workspace:1001" > "$KAREN_HUB_DIR/state/test-pm_workspace"
+  echo '{"from":"a","type":"message","ts":"2026-01-01T00:00:00Z","body":"msg1"}' > "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
+  echo '{"from":"b","type":"message","ts":"2026-01-01T00:00:01Z","body":"msg2"}' >> "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
 
   local output
   output=$("$SCAFFOLD_ROOT/scripts/health.sh" 2>&1)
@@ -755,22 +774,22 @@ test_memory_survives_shutdown_respawn_cycle() {
   _setup_initialized_project
   cd "$TEST_TMPDIR/project"
 
-  echo "# PM Memory" > "$TEST_TMPDIR/project/.agent/memory/pm.md"
-  echo "- Decided on invoice-first MVP" >> "$TEST_TMPDIR/project/.agent/memory/pm.md"
+  echo "# PM Memory" > "$KAREN_HUB_DIR/memory/test-pm.md"
+  echo "- Decided on invoice-first MVP" >> "$KAREN_HUB_DIR/memory/test-pm.md"
 
-  echo "workspace:1001" > "$TEST_TMPDIR/project/.agent/state/pm_workspace"
+  echo "workspace:1001" > "$KAREN_HUB_DIR/state/test-pm_workspace"
   "$SCAFFOLD_ROOT/scripts/shutdown.sh" pm >/dev/null 2>&1
 
-  assert_file_exists "memory survives shutdown" "$TEST_TMPDIR/project/.agent/memory/pm.md"
+  assert_file_exists "memory survives shutdown" "$KAREN_HUB_DIR/memory/test-pm.md"
   local content
-  content=$(cat "$TEST_TMPDIR/project/.agent/memory/pm.md")
+  content=$(cat "$KAREN_HUB_DIR/memory/test-pm.md")
   assert_contains "memory content intact" "$content" "invoice-first MVP"
 
   export AGENT_ROLE="manager"
   "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "Resume work" "$TEST_TMPDIR/project" >/dev/null 2>&1
 
-  assert_file_exists "memory after respawn" "$TEST_TMPDIR/project/.agent/memory/pm.md"
-  content=$(cat "$TEST_TMPDIR/project/.agent/memory/pm.md")
+  assert_file_exists "memory after respawn" "$KAREN_HUB_DIR/memory/test-pm.md"
+  content=$(cat "$KAREN_HUB_DIR/memory/test-pm.md")
   assert_contains "memory still intact after respawn" "$content" "invoice-first MVP"
 }
 
@@ -778,11 +797,11 @@ test_shared_memory_file() {
   _setup_initialized_project
   cd "$TEST_TMPDIR/project"
 
-  echo "# Shared Memory" > "$TEST_TMPDIR/project/.agent/memory/shared.md"
-  echo "- Tech stack: Next.js + Postgres" >> "$TEST_TMPDIR/project/.agent/memory/shared.md"
+  echo "# Shared Memory" > "$KAREN_HUB_DIR/memory/test-shared.md"
+  echo "- Tech stack: Next.js + Postgres" >> "$KAREN_HUB_DIR/memory/test-shared.md"
 
   local content
-  content=$(cat "$TEST_TMPDIR/project/.agent/memory/shared.md")
+  content=$(cat "$KAREN_HUB_DIR/memory/test-shared.md")
   assert_contains "shared memory content" "$content" "Next.js + Postgres"
 }
 
@@ -794,13 +813,13 @@ test_inbox_persists_across_sessions() {
   "$SCAFFOLD_ROOT/scripts/msg.sh" pm "Task 1" >/dev/null 2>&1
   "$SCAFFOLD_ROOT/scripts/msg.sh" pm "Task 2" >/dev/null 2>&1
 
-  echo "workspace:1001" > "$TEST_TMPDIR/project/.agent/state/pm_workspace"
+  echo "workspace:1001" > "$KAREN_HUB_DIR/state/test-pm_workspace"
   "$SCAFFOLD_ROOT/scripts/shutdown.sh" pm >/dev/null 2>&1
 
   "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "Resume" "$TEST_TMPDIR/project" >/dev/null 2>&1
 
   # 2 original messages + 1 init from spawn = 3
-  assert_line_count "inbox accumulates" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" "3"
+  assert_line_count "inbox accumulates" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" "3"
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -842,7 +861,7 @@ test_devN_role_variants() {
 
   for ROLE in dev1 dev2 dev99; do
     "$SCAFFOLD_ROOT/scripts/spawn.sh" "$ROLE" "test" "$TEST_TMPDIR/project" >/dev/null 2>&1
-    assert_file_exists "$ROLE inbox created" "$TEST_TMPDIR/project/.agent/inbox/${ROLE}.jsonl"
+    assert_file_exists "$ROLE inbox created" "$TEST_TMPDIR/hub/inbox/test-${ROLE}.jsonl"
   done
 }
 
@@ -858,7 +877,7 @@ test_devN_project_local_override() {
   "$SCAFFOLD_ROOT/scripts/spawn.sh" dev1 "test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
 
   assert_eq "dev1 override spawn succeeds" "0" "$rc"
-  assert_file_exists "dev1 inbox" "$TEST_TMPDIR/project/.agent/inbox/dev1.jsonl"
+  assert_file_exists "dev1 inbox" "$KAREN_HUB_DIR/inbox/test-dev1.jsonl"
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -952,8 +971,8 @@ test_spawn_via_symlink() {
   "$TEST_TMPDIR/project/.agent/scripts/spawn.sh" pm "Symlink spawn test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
 
   assert_eq "spawn via symlink succeeds" "0" "$rc"
-  assert_file_exists "pm inbox via symlink" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
-  assert_json_field "init body" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 1 "body" "Symlink spawn test"
+  assert_file_exists "pm inbox via symlink" "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
+  assert_json_field "init body" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 1 "body" "Symlink spawn test"
 }
 
 test_msg_via_symlink() {
@@ -965,8 +984,8 @@ test_msg_via_symlink() {
   "$TEST_TMPDIR/project/.agent/scripts/msg.sh" dev1 "Symlink msg test" message >/dev/null 2>&1 || rc=$?
 
   assert_eq "msg via symlink succeeds" "0" "$rc"
-  assert_file_exists "dev1 inbox via symlink" "$TEST_TMPDIR/project/.agent/inbox/dev1.jsonl"
-  assert_json_field "msg body" "$TEST_TMPDIR/project/.agent/inbox/dev1.jsonl" 1 "body" "Symlink msg test"
+  assert_file_exists "dev1 inbox via symlink" "$KAREN_HUB_DIR/inbox/test-dev1.jsonl"
+  assert_json_field "msg body" "$KAREN_HUB_DIR/inbox/test-dev1.jsonl" 1 "body" "Symlink msg test"
 }
 
 test_health_via_symlink() {
@@ -980,7 +999,7 @@ test_health_via_symlink() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
-# SUITE 12: KAREN_PROJECT_AGENT_DIR resolution (BUG-1/4/5/7/10 fixes)
+# SUITE 12: KAREN_HUB_DIR resolution (BUG-1/4/5/7/10 fixes)
 # ═══════════════════════════════════════════════════════════════════════
 
 test_msg_uses_karen_project_agent_dir_env() {
@@ -988,58 +1007,58 @@ test_msg_uses_karen_project_agent_dir_env() {
   # cd somewhere ELSE — env var should override pwd
   cd "$TEST_TMPDIR"
   export AGENT_ROLE="manager"
-  export KAREN_PROJECT_AGENT_DIR="$TEST_TMPDIR/project/.agent"
+  export KAREN_HUB_DIR="$TEST_TMPDIR/hub"
 
   "$SCAFFOLD_ROOT/scripts/msg.sh" pm "env var test" message >/dev/null 2>&1
 
   # Message should land in the PROJECT inbox, not $TEST_TMPDIR/.agent/
-  assert_file_exists "inbox in project dir" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
-  assert_json_field "body correct" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 1 "body" "env var test"
+  assert_file_exists "inbox in project dir" "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
+  assert_json_field "body correct" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 1 "body" "env var test"
 
   # Verify nothing was created in pwd/.agent/
   assert_file_not_exists "no inbox in pwd" "$TEST_TMPDIR/.agent/inbox/pm.jsonl"
 
-  unset KAREN_PROJECT_AGENT_DIR
+  unset KAREN_HUB_DIR
 }
 
 test_health_uses_karen_project_agent_dir_env() {
   _setup_initialized_project
   cd "$TEST_TMPDIR/project"
 
-  echo "workspace:1001" > "$TEST_TMPDIR/project/.agent/state/pm_workspace"
-  echo '{"from":"manager","type":"init","ts":"2026-01-01T00:00:00Z","body":"test"}' > "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
+  echo "workspace:1001" > "$KAREN_HUB_DIR/state/test-pm_workspace"
+  echo '{"from":"manager","type":"init","ts":"2026-01-01T00:00:00Z","body":"test"}' > "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
 
   # cd away and rely on env var
   cd "$TEST_TMPDIR"
-  export KAREN_PROJECT_AGENT_DIR="$TEST_TMPDIR/project/.agent"
+  export KAREN_HUB_DIR="$TEST_TMPDIR/hub"
 
   local output
   output=$("$SCAFFOLD_ROOT/scripts/health.sh" 2>&1)
   assert_contains "health finds pm via env" "$output" "pm"
   assert_contains "health shows inbox count" "$output" "1 msgs"
 
-  unset KAREN_PROJECT_AGENT_DIR
+  unset KAREN_HUB_DIR
 }
 
-test_mux_state_uses_karen_project_agent_dir_env() {
+test_mux_state_uses_karen_hub_dir_env() {
   _setup_initialized_project
   cd "$TEST_TMPDIR"
-  export KAREN_PROJECT_AGENT_DIR="$TEST_TMPDIR/project/.agent"
+  export KAREN_HUB_DIR="$TEST_TMPDIR/hub"
 
-  # Source mux.sh and verify STATE points to project, not pwd
+  # Source mux.sh and verify STATE points to hub, not pwd
   (
     source "$SCAFFOLD_ROOT/lib/mux.sh"
-    if [[ "$STATE" == "$TEST_TMPDIR/project/.agent/state" ]]; then
+    if [[ "$STATE" == "$TEST_TMPDIR/hub/state" ]]; then
       exit 0
     else
-      echo "STATE=$STATE expected=$TEST_TMPDIR/project/.agent/state" >&2
+      echo "STATE=$STATE expected=$TEST_TMPDIR/hub/state" >&2
       exit 1
     fi
   )
   local rc=$?
   assert_eq "mux STATE resolves via env" "0" "$rc"
 
-  unset KAREN_PROJECT_AGENT_DIR
+  unset KAREN_HUB_DIR
 }
 
 test_msg_wake_prompt_uses_absolute_path() {
@@ -1049,7 +1068,7 @@ test_msg_wake_prompt_uses_absolute_path() {
 
   # Create workspace state so wake-up is attempted
   mkdir -p "$TEST_TMPDIR/project/.agent/state"
-  echo "workspace:1001" > "$TEST_TMPDIR/project/.agent/state/pm_workspace"
+  echo "workspace:1001" > "$KAREN_HUB_DIR/state/test-pm_workspace"
 
   # Override cmux mock to log what's sent
   local SEND_LOG="$TEST_TMPDIR/cmux_send.log"
@@ -1069,7 +1088,7 @@ MOCK
   # Wake prompt sent to cmux should contain absolute path
   local sent
   sent=$(cat "$SEND_LOG" 2>/dev/null || echo "")
-  assert_contains "wake prompt has absolute path" "$sent" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl"
+  assert_contains "wake prompt has absolute path" "$sent" "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1085,7 +1104,7 @@ test_spawn_reuses_alive_agent() {
   "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "First task" "$TEST_TMPDIR/project" >/dev/null 2>&1
 
   # Verify init message written
-  assert_line_count "1 init message" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" "1"
+  assert_line_count "1 init message" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" "1"
 
   # Second spawn should REUSE, not spawn new
   local output
@@ -1095,10 +1114,10 @@ test_spawn_reuses_alive_agent() {
   assert_contains "reuse not spawn" "$output" "reusing"
 
   # Inbox should have 2 messages (init + reuse), not 2 inits
-  assert_line_count "2 messages after reuse" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" "2"
-  assert_json_field "first is init" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 1 "type" "init"
-  assert_json_field "second is message" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 2 "type" "message"
-  assert_json_field "second body" "$TEST_TMPDIR/project/.agent/inbox/pm.jsonl" 2 "body" "Second task"
+  assert_line_count "2 messages after reuse" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" "2"
+  assert_json_field "first is init" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 1 "type" "init"
+  assert_json_field "second is message" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 2 "type" "message"
+  assert_json_field "second body" "$KAREN_HUB_DIR/inbox/test-pm.jsonl" 2 "body" "Second task"
 }
 
 test_spawn_reuse_logs_to_communications() {
@@ -1110,7 +1129,7 @@ test_spawn_reuse_logs_to_communications() {
   "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "Second" "$TEST_TMPDIR/project" >/dev/null 2>&1
 
   local comms
-  comms=$(cat "$TEST_TMPDIR/project/.agent/communications.md")
+  comms=$(cat "$KAREN_HUB_DIR/communications.md")
   assert_contains "reuse logged" "$comms" "(reuse)"
   assert_contains "reuse context" "$comms" "Second"
 }
@@ -1145,8 +1164,8 @@ test_spawn_cleans_stale_state_on_fresh() {
 
   # Create stale state files (agent is dead but state files remain)
   mkdir -p "$TEST_TMPDIR/project/.agent/state"
-  echo "workspace:9999" > "$TEST_TMPDIR/project/.agent/state/pm_workspace"
-  echo "surface:9999" > "$TEST_TMPDIR/project/.agent/state/pm_surface"
+  echo "workspace:9999" > "$KAREN_HUB_DIR/state/test-pm_workspace"
+  echo "surface:9999" > "$KAREN_HUB_DIR/state/test-pm_surface"
 
   # Mock cmux list-workspaces to NOT include workspace:9999 (agent is dead)
   cat > "$MOCK_BIN/cmux" << 'MOCK'
@@ -1233,7 +1252,7 @@ MOCK
   if [[ -f /tmp/karen-test-bootstrap.log ]]; then
     local bootstrap
     bootstrap=$(cat /tmp/karen-test-bootstrap.log)
-    assert_contains "bootstrap has KAREN_PROJECT_AGENT_DIR" "$bootstrap" "KAREN_PROJECT_AGENT_DIR"
+    assert_contains "bootstrap has KAREN_HUB_DIR" "$bootstrap" "KAREN_HUB_DIR"
     assert_contains "bootstrap has inbox check instruction" "$bootstrap" "check your inbox"
     rm -f /tmp/karen-test-bootstrap.log
   else
@@ -1345,10 +1364,10 @@ main() {
   run_test test_bootstrap_clears_stale_surface_files
   echo ""
 
-  echo "── Suite 12: KAREN_PROJECT_AGENT_DIR resolution ──"
+  echo "── Suite 12: KAREN_HUB_DIR resolution ──"
   run_test test_msg_uses_karen_project_agent_dir_env
   run_test test_health_uses_karen_project_agent_dir_env
-  run_test test_mux_state_uses_karen_project_agent_dir_env
+  run_test test_mux_state_uses_karen_hub_dir_env
   run_test test_msg_wake_prompt_uses_absolute_path
   echo ""
 

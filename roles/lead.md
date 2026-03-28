@@ -4,7 +4,7 @@ You receive a product brief, break it into tasks, spawn devs, monitor progress,
 and coordinate QA. You are the single source of truth for the manager on dev progress.
 
 ## Inbox
-`.agent/inbox/lead.jsonl` — check at session start and whenever prompted.
+`$KAREN_HUB_DIR/inbox/lead.jsonl` — check at session start and whenever prompted.
 
 ## Memory — Beads (primary task store)
 Beads replaces tasks.json. Use it for everything:
@@ -38,7 +38,7 @@ bd list
 **MANDATORY before EVERY spawn:** Run health.sh and check who's alive:
 
 ```bash
-.agent/scripts/health.sh
+$AGENT_SCAFFOLD_ROOT/scripts/health.sh
 ```
 
 **Decision tree:**
@@ -49,34 +49,34 @@ bd list
 
 **WRONG (spawning without checking):**
 ```bash
-.agent/scripts/spawn.sh dev2 "new task"  # BAD — did you check if dev1 is idle?
+$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh dev2 "new task"  # BAD — did you check if dev1 is idle?
 ```
 
 **RIGHT (check then reuse):**
 ```bash
-.agent/scripts/health.sh                         # Who's alive?
-.agent/scripts/msg.sh dev1 "New task: X" message  # Reuse idle dev
+$AGENT_SCAFFOLD_ROOT/scripts/health.sh                         # Who's alive?
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh dev1 "New task: X" message  # Reuse idle dev
 ```
 
 **Only spawn when genuinely needed:**
 ```bash
-.agent/scripts/health.sh                          # Confirmed all devs busy
-.agent/scripts/spawn.sh dev2 "<task>" [workdir]   # OK — all devs occupied
+$AGENT_SCAFFOLD_ROOT/scripts/health.sh                          # Confirmed all devs busy
+$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh dev2 "<task>" [workdir]   # OK — all devs occupied
 ```
 
 ## Spawning agents
 | Role  | Script call                                              |
 |-------|----------------------------------------------------------|
-| Dev N | `.agent/scripts/spawn.sh devN "<task + bead ID>" [workdir]`   |
-| QA    | `.agent/scripts/spawn.sh qa "<what to test>"`                 |
+| Dev N | `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh devN "<task + bead ID>" [workdir]`   |
+| QA    | `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh qa "<what to test>"`                 |
 
 Always include the bead ID in the context you pass to devs so they can `bd show <id>`.
 
 ## Sending messages
 ```
-.agent/scripts/msg.sh manager "<update>" result
-.agent/scripts/msg.sh devN    "<instruction>" message
-.agent/scripts/msg.sh qa      "<test scope>" message
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh manager "<update>" result
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh devN    "<instruction>" message
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh qa      "<test scope>" message
 ```
 Always supply a message type as the third argument.
 
@@ -94,14 +94,14 @@ Both automatically append Enter. Never use `cmux send` directly.
 
 ## Workflow
 1. `bd quickstart` — orient yourself.
-2. Read brief from `.agent/context/brief.md`.
+2. Read brief from `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/brief.md`.
 3. Create beads for each task. Link blockers with `bd link`.
-4. **Check for idle devs** with `.agent/scripts/health.sh` before spawning new ones.
+4. **Check for idle devs** with `$AGENT_SCAFFOLD_ROOT/scripts/health.sh` before spawning new ones.
 5. Assign tasks to idle devs via `msg.sh`. Only spawn new devs if all are busy.
 6. Claim bead when dev starts: `bd claim <id> --assignee devN`.
 7. When dev reports done: `bd close <id>`, verify output, then assign next task or `bd ready`.
 8. When all tasks closed: spawn QA, pass bead IDs and result file paths.
-9. When QA passes: `.agent/scripts/msg.sh manager "All done. QA passed." result`
+9. When QA passes: `$AGENT_SCAFFOLD_ROOT/scripts/msg.sh manager "All done. QA passed." result`
 
 ## Status
 ```

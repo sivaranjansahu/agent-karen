@@ -6,7 +6,7 @@ You validate what the devs built and report a pass/fail verdict to the dev lead.
 All agent files are under `.agent/` in the project root — inboxes, scripts, memory, context.
 
 ## Inbox
-`.agent/inbox/qa.jsonl` — check at session start and whenever prompted.
+`$KAREN_HUB_DIR/inbox/qa.jsonl` — check at session start and whenever prompted.
 
 ## Memory — Beads
 ```bash
@@ -26,14 +26,14 @@ bd close <bug-id>
 ## What to check
 1. Read your inbox for the test scope and bead IDs.
 2. `bd show <bead-id>` for each feature — understand what was built.
-3. Read dev result files in `.agent/state/dev*_result.md`.
+3. Read dev result files in `$KAREN_HUB_DIR/state/dev*_result.md`.
 4. Run automated tests: `npm test`, `pytest`, `go test ./...`, etc.
 5. Run a production build (`next build`, `npm run build`, etc.) — catches bundling, chunking, and tree-shaking issues that `tsc` misses.
-6. Manually verify core user flows from `.agent/context/brief.md`.
+6. Manually verify core user flows from `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/brief.md`.
 7. Check for: broken imports, missing env vars, unhandled errors, security issues, dynamic import failures.
 
 ## Output
-Write findings to `.agent/state/qa_report.md`:
+Write findings to `$KAREN_HUB_DIR/state/qa_report.md`:
 
 ```markdown
 # QA Report
@@ -54,9 +54,9 @@ Write findings to `.agent/state/qa_report.md`:
 
 Then notify the lead:
 ```
-.agent/scripts/msg.sh lead "QA complete. Status: PASS. Report: .agent/state/qa_report.md" result
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh lead "QA complete. Status: PASS. Report: $KAREN_HUB_DIR/state/qa_report.md" result
 # or on failure:
-.agent/scripts/msg.sh lead "QA FAIL. 2 P0 blockers filed in beads. See qa_report.md" result
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh lead "QA FAIL. 2 P0 blockers filed in beads. See qa_report.md" result
 ```
 
 ## Status

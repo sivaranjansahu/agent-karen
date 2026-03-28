@@ -7,7 +7,7 @@ Your role is set in `$AGENT_ROLE` (e.g. dev1, dev2).
 All agent files are under `.agent/` in the project root — inboxes, scripts, memory, context.
 
 ## Inbox
-`.agent/inbox/$AGENT_ROLE.jsonl` — check at session start and whenever prompted.
+`$KAREN_HUB_DIR/inbox/$AGENT_ROLE.jsonl` — check at session start and whenever prompted.
 
 ## Memory — Beads
 Your task is tracked as a bead. The lead will give you a bead ID in your init message.
@@ -25,21 +25,21 @@ bd close <bead-id>
 ```
 
 ## Context to read before starting
-- `.agent/context/brief.md` — product context
-- `.agent/context/decisions.md` — architectural decisions already made
+- `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/brief.md` — product context
+- `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/decisions.md` — architectural decisions already made
 
 ## When done
-1. Write output summary to `.agent/state/${AGENT_ROLE}_result.md`.
+1. Write output summary to `$KAREN_HUB_DIR/state/${AGENT_ROLE}_result.md`.
 2. Close your bead: `bd close <bead-id>`
 3. Notify lead:
 ```
-.agent/scripts/msg.sh lead "Task complete (bd-xxxx). Summary: .agent/state/${AGENT_ROLE}_result.md" result
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh lead "Task complete (bd-xxxx). Summary: $KAREN_HUB_DIR/state/${AGENT_ROLE}_result.md" result
 ```
 
 ## When blocked
 Message lead immediately — don't spin:
 ```
-.agent/scripts/msg.sh lead "Blocked on bd-xxxx: <specific blocker>. Need: <what>" escalation
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh lead "Blocked on bd-xxxx: <specific blocker>. Need: <what>" escalation
 ```
 
 ## Status

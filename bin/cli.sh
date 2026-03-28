@@ -2,13 +2,14 @@
 # karen — "I want to talk to the manager."
 #
 # Usage:
-#   karen init /path/to/project [--knowledge /path/to/docs]
-#   karen start /path/to/project
-#   karen spawn <role> "<context>" [working_dir]
-#   karen msg <role> "<message>" [type]
-#   karen health
-#   karen shutdown <role|--all|--idle [mins]>
-#   karen status
+#   karen up [--project <key>]                   Start agents from config.yaml
+#   karen config {show|projects|agents}           Inspect configuration
+#   karen init <project> [--knowledge <dir>]      Initialize a project
+#   karen start <project>                         Start the manager agent
+#   karen spawn <agent_id> "<context>" [dir]      Spawn an agent
+#   karen msg <target> "<message>" [type]         Send a message
+#   karen health [--project <key>]                Check agent health
+#   karen shutdown <agent|--all|--project <key>>  Shut down agents
 
 set -euo pipefail
 
@@ -27,6 +28,12 @@ CMD="${1:-help}"
 shift || true
 
 case "$CMD" in
+  up)
+    exec "$ROOT/scripts/up.sh" "$@"
+    ;;
+  config)
+    exec "$ROOT/scripts/config.sh" "$@"
+    ;;
   init)
     exec "$ROOT/init.sh" "$@"
     ;;
@@ -52,30 +59,43 @@ case "$CMD" in
     cat <<'HELP'
 agent-karen — "I want to talk to the manager."
 
-Multi-agent coordination for Claude Code. Spawn a team of AI agents.
-Talk to the manager. It runs the team.
+Multi-agent coordination for Claude Code. Define your team in config.yaml,
+run `karen up`, and talk to the manager.
 
 Usage:
-  karen init <project> [--knowledge <dir>]   Initialize for a project
+  karen up [--project <key>]                 Start agents from ~/.karen/config.yaml
+  karen config {show|projects|agents}        Inspect configuration
+  karen init <project> [--knowledge <dir>]   Initialize a single project
   karen start <project>                      Start the manager agent
-  karen spawn <role> "<context>" [dir]       Spawn an agent
-  karen msg <role> "<message>" [type]        Send a message to an agent
-  karen health                              Check all agents are alive
-  karen shutdown <role|--all|--idle N>       Shut down agents
-  karen status                              Show agent overview
+  karen spawn <agent_id> "<context>" [dir]   Spawn an agent
+  karen msg <target> "<message>" [type]      Send a message to an agent
+  karen health [--project <key>]             Check agent health
+  karen shutdown <id|--all|--project <key>>  Shut down agents
+
+Config file: ~/.karen/config.yaml
+
+  hub: ~/.karen/hub
+  projects:
+    myproject:
+      dir: ~/Projects/myproject
+      knowledge:
+        - ~/Projects/myproject/docs
+      agents:
+        manager: { role: manager, autostart: true }
+        lead: { role: lead }
+        dev1: { role: dev }
 
 Examples:
-  karen init ~/projects/my-app --knowledge ~/projects/my-app/docs
-  karen start ~/projects/my-app
-  karen spawn pm "Build an invoicing SaaS. MVP only."
-  karen msg lead "Brief is ready at .agent/context/brief.md" result
-  karen health
-  karen shutdown --idle 10
+  karen up                                   # start all autostart agents
+  karen up --project myproject               # start one project only
+  karen config agents                        # list all defined agents
+  karen spawn myproject-dev2 "Build auth"    # spawn specific agent
+  karen msg dev1 "Brief is ready" result     # message within project
+  karen msg other-manager "Need API" message # cross-project message
+  karen health                               # check all agents
+  karen shutdown --all                       # stop everything
 
-Backends (auto-detected):
-  cmux     Best experience — named tabs, status bar, notifications
-  tmux     Universal — works on macOS, Linux, WSL
-  terminal Plain terminal tabs (macOS only, no push messaging)
+Backends (auto-detected): cmux, tmux, terminal (macOS)
 
 Learn more: https://github.com/sivaranjansahu/agent-karen
 HELP

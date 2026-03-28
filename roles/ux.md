@@ -3,7 +3,7 @@
 Design user interfaces, page layouts, and interaction patterns for the product. Produce design specs that developers can build from directly.
 
 ## Inbox
-`.agent/inbox/ux.jsonl` — check at session start and whenever prompted.
+`$KAREN_HUB_DIR/inbox/ux.jsonl` — check at session start and whenever prompted.
 
 ## Memory — Beads
 Use `bd` to track your open work items:
@@ -15,16 +15,16 @@ bd close <id>
 
 ## Your outputs
 When work is complete, write to:
-- `.agent/context/design-spec.md` — page layouts, component specs, interaction patterns
-- `.agent/context/design-system.md` — colors, typography, spacing, component library notes
-- Individual page specs as needed (e.g. `.agent/context/landing-page-spec.md`)
+- `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/design-spec.md` — page layouts, component specs, interaction patterns
+- `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/design-system.md` — colors, typography, spacing, component library notes
+- Individual page specs as needed (e.g. `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/landing-page-spec.md`)
 
 ## Sending messages
 ```
-.agent/scripts/msg.sh pm "<question or update>" question
-.agent/scripts/msg.sh cmo "<question or update>" question
-.agent/scripts/msg.sh lead "<design spec ready>" result
-.agent/scripts/msg.sh manager "<question or update>" question
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh pm "<question or update>" question
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh cmo "<question or update>" question
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh lead "<design spec ready>" result
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh manager "<question or update>" question
 ```
 Always supply a message type as the third argument.
 
@@ -38,7 +38,7 @@ If design-related Claude Code skills are installed (e.g. Figma MCP, screenshot t
 Check what's available at session start. Use what's there, skip what's not. Don't ask the user to install anything.
 
 ## Workflow
-1. Read your inbox and any existing product brief (`.agent/context/brief.md`).
+1. Read your inbox and any existing product brief (`$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/brief.md`).
 2. Check for installed design skills/tools (browser, screenshot, Figma MCP).
 3. Review the current product UI — use browser tools if available, otherwise read component source.
 4. Gather requirements from PM (features) and CMO (messaging, positioning).

@@ -1,43 +1,28 @@
 #!/usr/bin/env bash
 # auto-shutdown.sh — Stop hook: check for idle agents after each response
 #
-# Runs after every Claude Code response. Checks if any OTHER agents
-# have been idle longer than AUTO_SHUTDOWN_MINS (default: off).
-#
-# Enable by setting AUTO_SHUTDOWN_MINS in your environment:
-#   export AUTO_SHUTDOWN_MINS=15
-#
-# Wire into .claude/settings.json:
-# {
-#   "hooks": {
-#     "Stop": [{ "type": "command", "command": "./hooks/auto-shutdown.sh" }]
-#   }
-# }
+# Enable: export AUTO_SHUTDOWN_MINS=15
 
 IDLE_MINS="${AUTO_SHUTDOWN_MINS:-}"
-[[ -z "$IDLE_MINS" ]] && exit 0  # Feature disabled
+[[ -z "$IDLE_MINS" ]] && exit 0
 
 ROOT="${AGENT_SCAFFOLD_ROOT:-}"
 [[ -z "$ROOT" ]] && exit 0
 
-SELF="${AGENT_ROLE:-}"
-STATE="$(pwd)/.agent/state"
-COMMS="$(pwd)/.agent/communications.md"
+SELF="${KAREN_AGENT_ID:-${AGENT_ROLE:-}}"
+HUB_DIR="${KAREN_HUB_DIR:-$(pwd)/.agent}"
+STATE="$HUB_DIR/state"
+COMMS="$HUB_DIR/communications.md"
 NOW=$(date "+%s")
 IDLE_SECS=$((IDLE_MINS * 60))
 
 for ws_file in "$STATE"/*_workspace; do
   [[ -f "$ws_file" ]] || continue
-  ROLE=$(basename "$ws_file" _workspace)
+  AGENT_ID=$(basename "$ws_file" _workspace)
+  [[ "$AGENT_ID" == "$SELF" ]] && continue
 
-  # Don't shut down yourself
-  [[ "$ROLE" == "$SELF" ]] && continue
-
-  # Check last outbound message from this role
-  LAST_LINE=$(grep -n "\`$ROLE\` →" "$COMMS" 2>/dev/null | tail -1 | cut -d: -f1)
-  if [[ -z "$LAST_LINE" ]]; then
-    continue  # No messages yet — agent may still be starting
-  fi
+  LAST_LINE=$(grep -n "\`$AGENT_ID\` →" "$COMMS" 2>/dev/null | tail -1 | cut -d: -f1)
+  [[ -z "$LAST_LINE" ]] && continue
 
   TS=$(sed -n "${LAST_LINE}s/.*\[\(.*\)\].*/\1/p" "$COMMS" 2>/dev/null)
   [[ -z "$TS" ]] && continue
@@ -47,18 +32,17 @@ for ws_file in "$STATE"/*_workspace; do
 
   IDLE=$((NOW - LAST_EPOCH))
   if [[ $IDLE -gt $IDLE_SECS ]]; then
-    # Source mux for shutdown
+    export KAREN_HUB_DIR="$HUB_DIR"
     source "$ROOT/lib/mux.sh" 2>/dev/null
     IDLE_HUMAN=$((IDLE / 60))
 
-    # Send memory save prompt before closing
-    mux_send "$ROLE" "Save key learnings to .agent/memory/${ROLE}.md — auto-shutdown in 3 seconds." 2>/dev/null || true
+    mux_send "$AGENT_ID" "Save key learnings to $HUB_DIR/memory/${AGENT_ID}.md — auto-shutdown in 3 seconds." 2>/dev/null || true
     sleep 3
-    mux_close "$ROLE" 2>/dev/null || true
+    mux_close "$AGENT_ID" 2>/dev/null || true
 
     TS_HUMAN=$(date "+%Y-%m-%d %H:%M:%S UTC")
     {
-      echo "## [$TS_HUMAN] \`system\` → \`$ROLE\` (shutdown)"
+      echo "## [$TS_HUMAN] \`system\` → \`$AGENT_ID\` (shutdown)"
       echo ""
       echo "**Auto-shutdown:** idle for ${IDLE_HUMAN}m (threshold: ${IDLE_MINS}m)"
       echo ""

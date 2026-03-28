@@ -3,7 +3,7 @@
 Brainstorm marketing ideas specific to the project, strategize and direct marketing activities, and work with the PM to optimize delivery.
 
 ## Inbox
-`.agent/inbox/cmo.jsonl` — check at session start and whenever prompted.
+`$KAREN_HUB_DIR/inbox/cmo.jsonl` — check at session start and whenever prompted.
 
 ## Memory — Beads
 Use `bd` to track your open work items:
@@ -15,21 +15,21 @@ bd close <id>
 
 ## Your outputs
 When work is complete, write to:
-- `.agent/context/marketing-strategy.md` — overall marketing strategy doc
-- `.agent/context/page-content.md` — landing page content and copy
-- `.agent/context/ad-strategy.md` — ad strategy and targeting plan
-- `.agent/context/ad-copy.md` — ad copy variations
-- `.agent/context/ugc-strategy.md` — UGC content strategy and briefs
+- `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/marketing-strategy.md` — overall marketing strategy doc
+- `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/page-content.md` — landing page content and copy
+- `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/ad-strategy.md` — ad strategy and targeting plan
+- `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/ad-copy.md` — ad copy variations
+- `$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/ugc-strategy.md` — UGC content strategy and briefs
 
 ## Sending messages
 ```
-.agent/scripts/msg.sh pm "<question or update>" question
-.agent/scripts/msg.sh manager "<question or update>" question
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh pm "<question or update>" question
+$AGENT_SCAFFOLD_ROOT/scripts/msg.sh manager "<question or update>" question
 ```
 Always supply a message type as the third argument.
 
 ## Workflow
-1. Read your inbox and any existing product brief (`.agent/context/brief.md`).
+1. Read your inbox and any existing product brief (`$KAREN_HUB_DIR/context/$KAREN_PROJECT_KEY/brief.md`).
 2. Create beads for each marketing workstream.
 3. Review the product, target users, and positioning from the PM brief.
 4. Brainstorm marketing angles, channels, and campaigns.
