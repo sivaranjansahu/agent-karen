@@ -78,6 +78,12 @@ if [[ "${1:-}" == "--all" ]]; then
     AGENT_ID=$(basename "$ws_file" _workspace)
     shutdown_agent "$AGENT_ID"
   done
+  # Kill heartbeat daemon
+  HEARTBEAT_PID_FILE="$HUB_DIR/state/heartbeat.pid"
+  if [[ -f "$HEARTBEAT_PID_FILE" ]]; then
+    kill "$(cat "$HEARTBEAT_PID_FILE")" 2>/dev/null && echo "  ✓ Heartbeat stopped" || true
+    rm -f "$HEARTBEAT_PID_FILE"
+  fi
   echo "Done."
 
 elif [[ "${1:-}" == "--project" ]]; then

@@ -262,9 +262,24 @@ with open('$SETTINGS_FILE', 'w') as f:
   done 2>/dev/null || true
 done
 
+# ── Start heartbeat daemon ────────────────────────────────────────────────────
+# Kill any existing heartbeat
+HEARTBEAT_PID_FILE="$HUB_DIR/state/heartbeat.pid"
+if [[ -f "$HEARTBEAT_PID_FILE" ]]; then
+  OLD_PID=$(cat "$HEARTBEAT_PID_FILE")
+  kill "$OLD_PID" 2>/dev/null || true
+fi
+
+export KAREN_HUB_DIR="$HUB_DIR"
+nohup "$SCAFFOLD_DIR/scripts/heartbeat.sh" loop 15 >> "$HUB_DIR/state/heartbeat.log" 2>&1 &
+echo "$!" > "$HEARTBEAT_PID_FILE"
+echo ""
+echo "✓ Heartbeat started (PID $!, every 15s)"
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  ✓ Karen is up. $SPAWNED agent(s) started."
 echo "  Hub: $HUB_DIR"
+echo "  Heartbeat: every 15s (log: $HUB_DIR/state/heartbeat.log)"
 echo "  Health: $SCAFFOLD_DIR/scripts/health.sh"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
