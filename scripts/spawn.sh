@@ -80,16 +80,17 @@ EXISTING_WS=""
 if [[ -f "$WS_FILE" ]]; then
   EXISTING_WS=$(cat "$WS_FILE")
   ACTIVE_WS=$(mux_list 2>/dev/null || true)
-  # Match by workspace ID, agent ID, or display name (project:role)
-  if echo "$ACTIVE_WS" | grep -qE "$EXISTING_WS|$AGENT_ID|$DISPLAY_NAME"; then
+  # Match by workspace ID or exact display name (project:role)
+  if echo "$ACTIVE_WS" | grep -qE "$EXISTING_WS" || echo "$ACTIVE_WS" | grep -qwF "$DISPLAY_NAME"; then
     AGENT_ALIVE=true
   fi
 else
   # No state file — still check if a tab with this name exists (leftover from old spawn)
   ACTIVE_WS=$(mux_list 2>/dev/null || true)
-  if echo "$ACTIVE_WS" | grep -qE "$AGENT_ID|$DISPLAY_NAME|$SHORT_ROLE"; then
-    # Found a matching workspace — try to recover its ID
-    EXISTING_WS=$(echo "$ACTIVE_WS" | grep -oE 'workspace:[0-9]+' | head -1 || true)
+  if echo "$ACTIVE_WS" | grep -qwF "$DISPLAY_NAME"; then
+    # Found a matching workspace by exact display name — try to recover its ID
+    MATCHED_LINE=$(echo "$ACTIVE_WS" | grep -wF "$DISPLAY_NAME" | head -1)
+    EXISTING_WS=$(echo "$MATCHED_LINE" | grep -oE 'workspace:[0-9]+' | head -1 || true)
     if [[ -n "$EXISTING_WS" ]]; then
       echo "$EXISTING_WS" > "$WS_FILE"
       AGENT_ALIVE=true
