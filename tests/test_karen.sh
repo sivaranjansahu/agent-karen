@@ -1402,6 +1402,141 @@ MOCK
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+# SUITE 16: lib/hub.sh — workspace config resolution ladder
+# ═══════════════════════════════════════════════════════════════════════
+
+test_hub_config_explicit_env_wins() {
+  local result
+  result=$(
+    cd "$TEST_TMPDIR"
+    export KAREN_CONFIG="$TEST_TMPDIR/explicit-config.yaml"
+    unset KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_karen_config
+  )
+  assert_eq "explicit KAREN_CONFIG wins" "$TEST_TMPDIR/explicit-config.yaml" "$result"
+}
+
+test_hub_config_nearest_workspace_wins() {
+  mkdir -p "$TEST_TMPDIR/a/.karen" "$TEST_TMPDIR/a/b/.karen" "$TEST_TMPDIR/a/b/c"
+  echo "hub: ~/nope" > "$TEST_TMPDIR/a/.karen/config.yaml"
+  echo "hub: ~/nope2" > "$TEST_TMPDIR/a/b/.karen/config.yaml"
+
+  local result
+  result=$(
+    cd "$TEST_TMPDIR/a/b/c"
+    unset KAREN_CONFIG KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_karen_config
+  )
+  assert_eq "nearest workspace config wins over ancestor's" "$TEST_TMPDIR/a/b/.karen/config.yaml" "$result"
+}
+
+test_hub_config_falls_back_to_global() {
+  mkdir -p "$TEST_TMPDIR/fake-home" "$TEST_TMPDIR/no-workspace-here"
+  local result rc=0
+  result=$(
+    cd "$TEST_TMPDIR/no-workspace-here"
+    export HOME="$TEST_TMPDIR/fake-home"
+    unset KAREN_CONFIG KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_karen_config
+  ) || rc=$?
+  assert_eq "falls back to global config path" "$TEST_TMPDIR/fake-home/.karen/config.yaml" "$result"
+  assert_eq "fallback signals non-workspace via exit code" "1" "$rc"
+}
+
+test_hub_resolve_hub_dir_workspace_self_contained_no_hub_key() {
+  mkdir -p "$TEST_TMPDIR/ws1/.karen" "$TEST_TMPDIR/ws1/sub"
+  echo "projects: {}" > "$TEST_TMPDIR/ws1/.karen/config.yaml"
+
+  local result
+  result=$(
+    cd "$TEST_TMPDIR/ws1/sub"
+    unset KAREN_CONFIG KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_hub_dir
+  )
+  assert_eq "self-contained workspace hub defaults to config's own dir" "$TEST_TMPDIR/ws1/.karen" "$result"
+}
+
+test_hub_resolve_hub_dir_workspace_with_explicit_hub_key() {
+  mkdir -p "$TEST_TMPDIR/ws2/.karen" "$TEST_TMPDIR/ws2/sub" "$TEST_TMPDIR/ws2-custom-hub"
+  echo "hub: $TEST_TMPDIR/ws2-custom-hub" > "$TEST_TMPDIR/ws2/.karen/config.yaml"
+
+  local result
+  result=$(
+    cd "$TEST_TMPDIR/ws2/sub"
+    unset KAREN_CONFIG KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_hub_dir
+  )
+  assert_eq "workspace hub honors declared hub: key" "$TEST_TMPDIR/ws2-custom-hub" "$result"
+}
+
+test_hub_resolve_hub_dir_explicit_env_overrides_workspace() {
+  mkdir -p "$TEST_TMPDIR/ws3/.karen"
+  echo "hub: /should-not-be-used" > "$TEST_TMPDIR/ws3/.karen/config.yaml"
+
+  local result
+  result=$(
+    cd "$TEST_TMPDIR/ws3"
+    export KAREN_HUB_DIR="$TEST_TMPDIR/explicit-hub"
+    unset KAREN_CONFIG KAREN_PROJECT_AGENT_DIR
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_hub_dir
+  )
+  assert_eq "explicit KAREN_HUB_DIR outranks workspace config" "$TEST_TMPDIR/explicit-hub" "$result"
+}
+
+test_hub_resolve_hub_dir_standalone_agent_unchanged_without_workspace_config() {
+  mkdir -p "$TEST_TMPDIR/standalone/.agent/inbox" "$TEST_TMPDIR/fake-home-2"
+
+  local result
+  result=$(
+    cd "$TEST_TMPDIR/standalone"
+    export HOME="$TEST_TMPDIR/fake-home-2"
+    unset KAREN_CONFIG KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_hub_dir
+  )
+  assert_eq "standalone .agent mode unaffected by workspace tier" "$TEST_TMPDIR/standalone/.agent" "$result"
+}
+
+test_hub_resolve_hub_dir_central_hub_regression() {
+  local result
+  result=$(
+    cd "$TEST_TMPDIR"
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_hub_dir
+  )
+  assert_eq "central-hub mode (explicit KAREN_HUB_DIR from test setup) unchanged" "$KAREN_HUB_DIR" "$result"
+}
+
+test_hub_two_sibling_workspaces_resolve_independently() {
+  mkdir -p "$TEST_TMPDIR/wsA/.karen" "$TEST_TMPDIR/wsA/nested/deep"
+  mkdir -p "$TEST_TMPDIR/wsB/.karen" "$TEST_TMPDIR/wsB/nested/deep"
+  echo "projects: {}" > "$TEST_TMPDIR/wsA/.karen/config.yaml"
+  echo "projects: {}" > "$TEST_TMPDIR/wsB/.karen/config.yaml"
+
+  local result_a result_b
+  result_a=$(
+    cd "$TEST_TMPDIR/wsA/nested/deep"
+    unset KAREN_CONFIG KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_hub_dir
+  )
+  result_b=$(
+    cd "$TEST_TMPDIR/wsB/nested/deep"
+    unset KAREN_CONFIG KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_hub_dir
+  )
+  assert_eq "sibling workspace A resolves its own hub" "$TEST_TMPDIR/wsA/.karen" "$result_a"
+  assert_eq "sibling workspace B resolves its own hub" "$TEST_TMPDIR/wsB/.karen" "$result_b"
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 # TEST RUNNER
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -1531,6 +1666,18 @@ main() {
 
   echo "── Suite 15: Bootstrap prompt content ──"
   run_test test_spawn_bootstrap_includes_env_vars
+  echo ""
+
+  echo "── Suite 16: workspace config resolution ──"
+  run_test test_hub_config_explicit_env_wins
+  run_test test_hub_config_nearest_workspace_wins
+  run_test test_hub_config_falls_back_to_global
+  run_test test_hub_resolve_hub_dir_workspace_self_contained_no_hub_key
+  run_test test_hub_resolve_hub_dir_workspace_with_explicit_hub_key
+  run_test test_hub_resolve_hub_dir_explicit_env_overrides_workspace
+  run_test test_hub_resolve_hub_dir_standalone_agent_unchanged_without_workspace_config
+  run_test test_hub_resolve_hub_dir_central_hub_regression
+  run_test test_hub_two_sibling_workspaces_resolve_independently
   echo ""
 
   # ── Summary ──

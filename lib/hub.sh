@@ -4,13 +4,67 @@
 # Source this in any script that needs hub paths or agent ID resolution.
 # Usage: source "$ROOT/lib/hub.sh"
 
+# ── Karen config resolution ──────────────────────────────────────────────────
+# The single source of truth for "which karen config.yaml applies here."
+# Priority (nearest/explicit wins):
+#   1. $KAREN_CONFIG — explicit override, used as-is (existence not required;
+#      callers that need it to exist already check that themselves).
+#   2. Nearest workspace config: walk up from $PWD to /, first .karen/config.yaml
+#      that EXISTS wins (nearest ancestor, not furthest).
+#   3. Global fallback: ~/.karen/config.yaml (used as-is).
+# Every script reading a karen config.yaml should call this instead of hand-rolling
+# ${KAREN_CONFIG:-$HOME/.karen/config.yaml}, so workspace-scoped configs are found
+# automatically.
+#
+# Return code doubles as "did we find a workspace-scoped config": 0 if resolved via
+# $KAREN_CONFIG or the upward search, 1 if it had to fall back to the bare global
+# default (the path is still printed either way — callers that just want "the"
+# config file can ignore the exit code; resolve_hub_dir() below uses it to decide
+# whether a self-contained workspace hub applies).
+resolve_karen_config() {
+  if [[ -n "${KAREN_CONFIG:-}" ]]; then
+    echo "$KAREN_CONFIG"
+    return 0
+  fi
+
+  local DIR="$(pwd)"
+  while [[ "$DIR" != "/" ]]; do
+    if [[ -f "$DIR/.karen/config.yaml" ]]; then
+      echo "$DIR/.karen/config.yaml"
+      return 0
+    fi
+    DIR="$(dirname "$DIR")"
+  done
+
+  echo "$HOME/.karen/config.yaml"
+  return 1
+}
+
 # ── Hub directory resolution ─────────────────────────────────────────────────
-# Priority: KAREN_HUB_DIR (central hub) > KAREN_PROJECT_AGENT_DIR > pwd/.agent > error
+# Priority: KAREN_HUB_DIR (central hub) > KAREN_PROJECT_AGENT_DIR >
+#           nearest workspace .karen/config.yaml > pwd/.agent (standalone) > error
 resolve_hub_dir() {
+  local WORKSPACE_CONFIG
   if [[ -n "${KAREN_HUB_DIR:-}" ]]; then
     echo "$KAREN_HUB_DIR"
   elif [[ -n "${KAREN_PROJECT_AGENT_DIR:-}" && -d "$KAREN_PROJECT_AGENT_DIR" ]]; then
     echo "$KAREN_PROJECT_AGENT_DIR"
+  elif WORKSPACE_CONFIG=$(resolve_karen_config) && [[ -f "$WORKSPACE_CONFIG" ]]; then
+    # A workspace-scoped config was found (not the bare global fallback) — derive
+    # its hub: its own `hub:` key if declared, else the config's own directory
+    # (self-contained: a workspace needs no hand-wired hub path).
+    local WS_HUB
+    WS_HUB=$(python3 -c "
+import yaml, os
+config = yaml.safe_load(open('$WORKSPACE_CONFIG')) or {}
+hub = config.get('hub')
+print(os.path.expanduser(hub) if hub else '', end='')
+" 2>/dev/null || true)
+    if [[ -n "$WS_HUB" ]]; then
+      echo "$WS_HUB"
+    else
+      echo "$(dirname "$WORKSPACE_CONFIG")"
+    fi
   elif [[ -d "$(pwd)/.agent" ]]; then
     echo "$(pwd)/.agent"
   else
