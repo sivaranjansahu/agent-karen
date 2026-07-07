@@ -100,7 +100,7 @@ ROLE_MODEL=$(grep -ioE '<!--[[:space:]]*model:[[:space:]]*[a-z0-9._-]+' "$ROLE_F
 EFFECTIVE_MODEL="${SPAWN_MODEL:-$ROLE_MODEL}"
 if [[ -n "$EFFECTIVE_MODEL" ]]; then
   MODEL_FLAG="--model $EFFECTIVE_MODEL"
-  echo "  Model for $SHORT_ROLE: $EFFECTIVE_MODEL$([[ -n "$SPAWN_MODEL" ]] && echo ' (SPAWN_MODEL override)')" >&2
+  echo "  Model for $SHORT_ROLE: $EFFECTIVE_MODEL$([[ -n "${SPAWN_MODEL:-}" ]] && echo ' (SPAWN_MODEL override)')" >&2
 fi
 
 # ── Check if agent is already alive — reuse instead of duplicate spawn ────────
