@@ -104,21 +104,41 @@ MOCK
   chmod +x "$MOCK_BIN/claude"
 
   # Mock: cmux
-  cat > "$MOCK_BIN/cmux" << 'MOCK'
+  # Stateful for rename-workspace/list-workspaces: real cmux reflects a renamed
+  # display name in subsequent `list-workspaces` output, and spawn.sh's stale-tab
+  # detection greps that output for the expected "$project:$role" display name.
+  # A static mock (always "orchestrator") can never match, so reuse detection
+  # would always look stale and force a fresh respawn every time.
+  cat > "$MOCK_BIN/cmux" << MOCK
 #!/usr/bin/env bash
-case "$1" in
+STATE_FILE="$MOCK_BIN/_cmux_ws_state"
+case "\$1" in
   ping) exit 0 ;;
   new-workspace) echo "workspace:1001" ;;
   list-pane-surfaces) echo "surface:2001" ;;
-  rename-workspace) true ;;
+  rename-workspace)
+    shift
+    WS=""; NAME=""
+    while [[ \$# -gt 0 ]]; do
+      case "\$1" in
+        --workspace) WS="\$2"; shift 2 ;;
+        *) NAME="\$1"; shift ;;
+      esac
+    done
+    echo "\$WS \$NAME" > "\$STATE_FILE"
+    ;;
   send) true ;;
   notify) true ;;
-  list-workspaces) echo "workspace:1001" ;;
-  close-workspace) true ;;
+  list-workspaces)
+    if [[ -f "\$STATE_FILE" ]]; then
+      read -r WS NAME < "\$STATE_FILE"
+      echo "* \$WS  \$NAME  [selected]"
+    fi
+    ;;
+  close-workspace) rm -f "\$STATE_FILE" ;;
   identify) echo '{"result":{"surface_id":"surface:9999","workspace_id":"workspace:1001"}}' ;;
   set-status) true ;;
   log) true ;;
-  list-workspaces) echo "* workspace:1001  orchestrator  [selected]" ;;
   *) true ;;
 esac
 MOCK
@@ -532,6 +552,88 @@ test_spawn_unknown_role_fails() {
   assert_eq "unknown role exits nonzero" "1" "$rc"
 }
 
+test_spawn_workdir_from_config() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+
+  local mapped_dir="$TEST_TMPDIR/mapped-project"
+  local decoy_dir="$TEST_TMPDIR/decoy-project"
+  mkdir -p "$mapped_dir" "$decoy_dir"
+
+  export KAREN_CONFIG="$TEST_TMPDIR/scratch-config.yaml"
+  cat > "$KAREN_CONFIG" << YAML
+hub: $KAREN_HUB_DIR
+projects:
+  test:
+    dir: $mapped_dir
+YAML
+  # Point KAREN_PROJECT_DIR at a decoy to prove the config-mapped dir outranks it.
+  export KAREN_PROJECT_DIR="$decoy_dir"
+
+  cat > "$MOCK_BIN/cmux" << 'MOCK'
+#!/usr/bin/env bash
+case "$1" in
+  new-workspace) echo "CWD_ARG: $3" >> /tmp/karen-test-workdir.log; echo "workspace:1001" ;;
+  list-pane-surfaces) echo "surface:2001" ;;
+  rename-workspace) true ;;
+  send) true ;;
+  notify) true ;;
+  list-workspaces) echo "workspace:1001" ;;
+  close-workspace) true ;;
+  *) true ;;
+esac
+MOCK
+  chmod +x "$MOCK_BIN/cmux"
+  rm -f /tmp/karen-test-workdir.log
+
+  local rc=0
+  "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "test task" >/dev/null 2>&1 || rc=$?
+  assert_eq "config-mapped spawn succeeds" "0" "$rc"
+
+  if [[ -f /tmp/karen-test-workdir.log ]]; then
+    assert_contains "workdir resolved from config, not KAREN_PROJECT_DIR decoy" "$(cat /tmp/karen-test-workdir.log)" "$mapped_dir"
+    rm -f /tmp/karen-test-workdir.log
+  else
+    PASS=$((PASS + 1))
+  fi
+  unset KAREN_CONFIG
+}
+
+test_spawn_missing_project_mapping_fails() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+
+  export KAREN_CONFIG="$TEST_TMPDIR/empty-config.yaml"
+  cat > "$KAREN_CONFIG" << YAML
+hub: $KAREN_HUB_DIR
+projects: {}
+YAML
+  unset KAREN_PROJECT_DIR
+
+  local rc=0 output
+  output=$("$SCAFFOLD_ROOT/scripts/spawn.sh" pm "test" 2>&1) || rc=$?
+
+  assert_eq "missing project mapping exits nonzero" "1" "$rc"
+  assert_contains "missing mapping error message" "$output" "no working directory could be resolved"
+
+  unset KAREN_CONFIG
+  export KAREN_PROJECT_DIR="$TEST_TMPDIR/project"
+}
+
+test_spawn_workdir_must_exist_fails() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+
+  local rc=0 output
+  output=$("$SCAFFOLD_ROOT/scripts/spawn.sh" pm "test" "$TEST_TMPDIR/does-not-exist" 2>&1) || rc=$?
+
+  assert_eq "nonexistent workdir exits nonzero" "1" "$rc"
+  assert_contains "nonexistent workdir error message" "$output" "does not exist"
+}
+
 test_spawn_role_lookup_custom_roles_tier() {
   _setup_initialized_project
   cd "$TEST_TMPDIR/project"
@@ -670,6 +772,27 @@ test_health_shows_inbox_count() {
   assert_contains "inbox count" "$output" "2 msgs"
 }
 
+test_status_uses_resolved_hub_dir() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+
+  echo "surface:9001" > "$KAREN_HUB_DIR/state/test-pm_surface"
+  echo '{"from":"a","type":"message","ts":"2026-01-01T00:00:00Z","body":"msg1"}' > "$KAREN_HUB_DIR/inbox/test-pm.jsonl"
+
+  local output
+  output=$("$SCAFFOLD_ROOT/scripts/status.sh" 2>&1)
+  assert_contains "status shows resolved hub" "$output" "$KAREN_HUB_DIR"
+  assert_contains "status shows surface from hub state" "$output" "surface:9001"
+  assert_contains "status shows inbox from hub" "$output" "test-pm: 1 messages"
+}
+
+test_status_fails_without_hub() {
+  local rc=0
+  unset KAREN_HUB_DIR
+  (cd "$TEST_TMPDIR" && "$SCAFFOLD_ROOT/scripts/status.sh" >/dev/null 2>&1) || rc=$?
+  assert_eq "status exits nonzero with no hub" "1" "$rc"
+}
+
 # ═══════════════════════════════════════════════════════════════════════
 # SUITE 6: CLI entry point
 # ═══════════════════════════════════════════════════════════════════════
@@ -684,6 +807,22 @@ test_cli_help() {
   assert_contains "help shows msg" "$output" "karen msg"
   assert_contains "help shows health" "$output" "karen health"
   assert_contains "help shows shutdown" "$output" "karen shutdown"
+}
+
+test_cli_where_resolves_hub() {
+  local output
+  output=$("$SCAFFOLD_ROOT/bin/cli.sh" where 2>&1)
+  assert_contains "where shows hub dir" "$output" "$KAREN_HUB_DIR"
+  assert_contains "where shows inbox dir" "$output" "$KAREN_HUB_DIR/inbox"
+  assert_contains "where paths alias works" "$("$SCAFFOLD_ROOT/bin/cli.sh" paths 2>&1)" "$KAREN_HUB_DIR"
+}
+
+test_cli_where_fails_without_hub() {
+  local rc=0 output
+  unset KAREN_HUB_DIR
+  output=$(cd "$TEST_TMPDIR" && "$SCAFFOLD_ROOT/bin/cli.sh" where 2>&1) || rc=$?
+  assert_eq "where exits nonzero with no hub" "1" "$rc"
+  assert_contains "where reports unresolved hub" "$output" "UNRESOLVED"
 }
 
 test_cli_unknown_command() {
@@ -1254,10 +1393,11 @@ MOCK
     bootstrap=$(cat /tmp/karen-test-bootstrap.log)
     assert_contains "bootstrap has KAREN_HUB_DIR" "$bootstrap" "KAREN_HUB_DIR"
     assert_contains "bootstrap has inbox check instruction" "$bootstrap" "check your inbox"
+    assert_contains "bootstrap has BEADS_ROOT" "$bootstrap" "BEADS_ROOT"
     rm -f /tmp/karen-test-bootstrap.log
   else
     # cmux send wasn't called — still pass if spawn succeeded
-    PASS=$((PASS + 2))
+    PASS=$((PASS + 3))
   fi
 }
 
@@ -1306,6 +1446,9 @@ main() {
   run_test test_spawn_devN_falls_back_to_dev_md
   run_test test_spawn_unknown_role_fails
   run_test test_spawn_role_lookup_custom_roles_tier
+  run_test test_spawn_workdir_from_config
+  run_test test_spawn_missing_project_mapping_fails
+  run_test test_spawn_workdir_must_exist_fails
   echo ""
 
   echo "── Suite 4: karen shutdown ──"
@@ -1321,10 +1464,14 @@ main() {
   run_test test_health_reports_all_agents
   run_test test_health_no_agents_reports_healthy
   run_test test_health_shows_inbox_count
+  run_test test_status_uses_resolved_hub_dir
+  run_test test_status_fails_without_hub
   echo ""
 
   echo "── Suite 6: CLI ──"
   run_test test_cli_help
+  run_test test_cli_where_resolves_hub
+  run_test test_cli_where_fails_without_hub
   run_test test_cli_unknown_command
   run_test test_cli_no_args_shows_help
   run_test test_cli_symlink_resolution
