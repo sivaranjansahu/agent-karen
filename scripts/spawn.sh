@@ -28,13 +28,36 @@ AGENT_ID=$(resolve_agent_id "$TARGET")
 SHORT_ROLE=$(extract_role "$AGENT_ID")
 PROJECT_KEY=$(extract_project_key "$AGENT_ID")
 
-# Resolve working directory: explicit arg > project dir from config > pwd
+# Resolve working directory: explicit arg > configured project path > KAREN_PROJECT_DIR > pwd
+KAREN_CONFIG_FILE="${KAREN_CONFIG:-$HOME/.karen/config.yaml}"
+CONFIGURED_DIR=""
+if [[ -z "${3:-}" && -n "$PROJECT_KEY" && -f "$KAREN_CONFIG_FILE" ]]; then
+  CONFIGURED_DIR=$(python3 -c "
+import yaml, os, sys
+config = yaml.safe_load(open(os.path.expanduser('$KAREN_CONFIG_FILE'))) or {}
+proj = (config.get('projects') or {}).get('$PROJECT_KEY')
+print(os.path.expanduser(proj['dir']) if proj and proj.get('dir') else '', end='')
+" 2>/dev/null || true)
+fi
+
 if [[ -n "${3:-}" ]]; then
   WORKDIR="$3"
+elif [[ -n "$CONFIGURED_DIR" ]]; then
+  WORKDIR="$CONFIGURED_DIR"
 elif [[ -n "${KAREN_PROJECT_DIR:-}" ]]; then
   WORKDIR="$KAREN_PROJECT_DIR"
+elif [[ -n "$PROJECT_KEY" ]]; then
+  echo "ERROR: agent ID '$AGENT_ID' is project-prefixed ('$PROJECT_KEY') but no working directory could be resolved." >&2
+  echo "  Checked: explicit arg, '$PROJECT_KEY' in $KAREN_CONFIG_FILE, \$KAREN_PROJECT_DIR." >&2
+  echo "  Fix: register the project (karen add <path> --name $PROJECT_KEY) or pass an explicit working_dir." >&2
+  exit 1
 else
   WORKDIR="$(pwd)"
+fi
+
+if [[ ! -d "$WORKDIR" ]]; then
+  echo "ERROR: resolved working directory does not exist: $WORKDIR" >&2
+  exit 1
 fi
 
 COMMS="$HUB_DIR/communications.md"
@@ -67,8 +90,24 @@ if [[ -z "$ROLE_FILE" ]]; then
   exit 1
 fi
 
+# Model selection. Precedence: SPAWN_MODEL env (caller's per-spawn discretion —
+# e.g. escalate a struggling agent to opus) > role-file directive (a role may
+# declare `<!-- model: sonnet -->`, also opus/haiku or a full id) > harness default.
+# Lets cheaper roles (devs, lead, UI test engineer) run on Sonnet by default while
+# the manager can override to Opus for a specific spawn.
+MODEL_FLAG=""
+ROLE_MODEL=$(grep -ioE '<!--[[:space:]]*model:[[:space:]]*[a-z0-9._-]+' "$ROLE_FILE" 2>/dev/null | head -1 | sed -E 's/.*model:[[:space:]]*//I' || true)
+EFFECTIVE_MODEL="${SPAWN_MODEL:-$ROLE_MODEL}"
+if [[ -n "$EFFECTIVE_MODEL" ]]; then
+  MODEL_FLAG="--model $EFFECTIVE_MODEL"
+  echo "  Model for $SHORT_ROLE: $EFFECTIVE_MODEL$([[ -n "$SPAWN_MODEL" ]] && echo ' (SPAWN_MODEL override)')" >&2
+fi
+
 # ── Check if agent is already alive — reuse instead of duplicate spawn ────────
 mkdir -p "$HUB_DIR/inbox" "$HUB_DIR/state" "$HUB_DIR/memory" "$HUB_DIR/context/$PROJECT_KEY"
+# BEADS_ROOT points at the project working dir, matching the project-local .beads/
+# convention bootstrap.sh/init.sh already use — a separate hub-side beads path here
+# would fragment the task DB between the manager and the agents it spawns.
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 TS_HUMAN=$(date "+%Y-%m-%d %H:%M:%S UTC")
 
@@ -80,9 +119,29 @@ EXISTING_WS=""
 if [[ -f "$WS_FILE" ]]; then
   EXISTING_WS=$(cat "$WS_FILE")
   ACTIVE_WS=$(mux_list 2>/dev/null || true)
-  # Match by workspace ID or exact display name (project:role)
-  if echo "$ACTIVE_WS" | grep -qE "$EXISTING_WS" || echo "$ACTIVE_WS" | grep -qwF "$DISPLAY_NAME"; then
+  # Match by workspace ID AND verify the display name on that workspace matches this agent.
+  # Matching ID alone can cause stale cross-project reuse: if workspace:1 belonged to a
+  # different project's lead and that workspace is still open, ID-only matching would
+  # incorrectly treat it as alive. We require the line that contains the ID to also
+  # contain the expected display name (project:role).
+  WS_LINE=$(echo "$ACTIVE_WS" | grep -E "$EXISTING_WS" | head -1 || true)
+  if [[ -n "$WS_LINE" ]] && echo "$WS_LINE" | grep -qwF "$DISPLAY_NAME"; then
     AGENT_ALIVE=true
+  elif echo "$ACTIVE_WS" | grep -qwF "$DISPLAY_NAME"; then
+    # Workspace ID is stale but an identically-named tab exists — recover its ID
+    MATCHED_LINE=$(echo "$ACTIVE_WS" | grep -wF "$DISPLAY_NAME" | head -1)
+    EXISTING_WS=$(echo "$MATCHED_LINE" | grep -oE 'workspace:[0-9]+' | head -1 || true)
+    if [[ -n "$EXISTING_WS" ]]; then
+      echo "$EXISTING_WS" > "$WS_FILE"
+      AGENT_ALIVE=true
+    else
+      # Can't recover — treat as dead and clean up
+      rm -f "$WS_FILE"
+    fi
+  else
+    # Workspace ID exists but belongs to a different agent — stale state file, clean up
+    echo "▸ Stale state: $WS_FILE points to $EXISTING_WS which belongs to a different agent. Cleaning up."
+    rm -f "$WS_FILE" "$HUB_DIR/state/${AGENT_ID}_surface"
   fi
 else
   # No state file — still check if a tab with this name exists (leftover from old spawn)
@@ -176,9 +235,11 @@ cd "$WORKDIR" && \
   export KAREN_AGENT_ID="$AGENT_ID" && \
   export KAREN_PROJECT_KEY="$PROJECT_KEY" && \
   export KAREN_PROJECT_DIR="$WORKDIR" && \
+  export BEADS_ROOT="$WORKDIR" && \
   if [[ ! -f CLAUDE.md ]] || ! grep -q '^# ROLE:' CLAUDE.md 2>/dev/null; then cp "$ROLE_FILE" CLAUDE.md; else echo '# Role file preserved (already exists with ROLE header)'; fi && \
+  if [[ ! -d .beads ]]; then bd init 2>/dev/null || true; fi && \
   bd quickstart 2>/dev/null || true && \
-  claude --dangerously-skip-permissions "You have been activated as $AGENT_ID (role: $SHORT_ROLE, project: $PROJECT_KEY). Orient yourself in this order:
+  claude ${SPAWN_RC:+--remote-control $AGENT_ID} --dangerously-skip-permissions $MODEL_FLAG "You have been activated as $AGENT_ID (role: $SHORT_ROLE, project: $PROJECT_KEY). Orient yourself in this order:
 1. Read CLAUDE.md for your role instructions.
 2. Read $HUB_DIR/memory/shared.md for cross-agent shared context.
 3. If $HUB_DIR/memory/${AGENT_ID}.md exists, read it for your memory from prior sessions.
@@ -203,7 +264,7 @@ MESSAGING: Use msg.sh for all communication. Short names work within your projec
   $ROOT/scripts/msg.sh tagger-dev1 \"hello\" message  → cross-project messaging
 NEVER call cmux send directly — always use msg.sh or wake.sh.
 
-IMPORTANT: After completing your current task, check your inbox ($HUB_DIR/inbox/${AGENT_ID}.jsonl) for new messages before exiting. If inbox has no new tasks, report to your coordinator that you are idle and available. Only exit if explicitly told to or if no new work arrives within 60 seconds.
+IMPORTANT: After completing your current task, check your inbox ($HUB_DIR/inbox/${AGENT_ID}.jsonl) for new messages before exiting. If inbox has no new tasks, report to your coordinator that you are idle and available. Only exit if explicitly told to or if no new work arrives within 600 seconds (10 minutes).
 
 IMPORTANT: Before you finish your session, write key learnings, decisions, and context you want to preserve to $HUB_DIR/memory/${AGENT_ID}.md so your next spawn can pick up where you left off."
 EOF
