@@ -4,17 +4,24 @@
 # Usage:
 #   ./scripts/status.sh
 
+set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+
+source "$ROOT/lib/hub.sh"
+
+HUB_DIR=$(resolve_hub_dir) || exit 1
 
 echo "╔═══════════════════════════════╗"
 echo "║     Agent Status Snapshot     ║"
 echo "╚═══════════════════════════════╝"
+echo "  Hub: $HUB_DIR"
 echo ""
 
 # Active surfaces
 echo "── Active surfaces ──────────────"
-for f in "$ROOT/.agent/state/"*_surface; do
+for f in "$HUB_DIR/state/"*_surface; do
   [[ -f "$f" ]] || continue
   ROLE=$(basename "$f" _surface)
   SF=$(cat "$f")
@@ -24,7 +31,7 @@ echo ""
 
 # Inbox sizes
 echo "── Inbox message counts ─────────"
-for f in "$ROOT/.agent/inbox/"*.jsonl; do
+for f in "$HUB_DIR/inbox/"*.jsonl; do
   [[ -f "$f" ]] || continue
   ROLE=$(basename "$f" .jsonl)
   COUNT=$(wc -l < "$f" | tr -d ' ')
@@ -33,11 +40,11 @@ done
 echo ""
 
 # Task file
-if [[ -f "$ROOT/.agent/state/tasks.json" ]]; then
+if [[ -f "$HUB_DIR/state/tasks.json" ]]; then
   echo "── Tasks ────────────────────────"
   python3 -c "
 import json, sys
-tasks = json.load(open('$ROOT/.agent/state/tasks.json'))
+tasks = json.load(open('$HUB_DIR/state/tasks.json'))
 for t in tasks:
     icon = '✓' if t['status'] == 'done' else ('✗' if t['status'] == 'blocked' else '…')
     print(f'  {icon} [{t[\"id\"]}] {t[\"title\"]} ({t[\"assignee\"]}) — {t[\"status\"]}')
@@ -46,9 +53,9 @@ for t in tasks:
 fi
 
 # QA report status
-if [[ -f "$ROOT/.agent/state/qa_report.md" ]]; then
+if [[ -f "$HUB_DIR/state/qa_report.md" ]]; then
   echo "── QA Report ────────────────────"
-  grep -m1 "^## Status" "$ROOT/.agent/state/qa_report.md" | sed 's/^/  /'
+  grep -m1 "^## Status" "$HUB_DIR/state/qa_report.md" | sed 's/^/  /'
   echo ""
 fi
 
