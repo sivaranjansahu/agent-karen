@@ -69,7 +69,9 @@ _cmux_spawn() {
   echo "$WS_ID" > "$STATE/${NAME}_workspace"
   echo "$SF_ID" > "$STATE/${NAME}_surface"
 
-  cmux send --workspace "$WS_ID" "${CMD}"$'\n'
+  cmux send --workspace "$WS_ID" "${CMD}"
+  sleep 0.3
+  cmux send-key --workspace "$WS_ID" "Enter"
   cmux notify --title "Agent spawned" --body "$NAME is online" 2>/dev/null || true
 
   echo "$WS_ID $SF_ID"
@@ -80,7 +82,11 @@ _cmux_send() {
   local WS_FILE="$STATE/${NAME}_workspace"
   [[ -f "$WS_FILE" ]] || return 1
   local WS_ID=$(cat "$WS_FILE")
-  cmux send --workspace "$WS_ID" "${TEXT}"$'\n' 2>/dev/null
+  # Send text content, then press Enter as a key event.
+  # cmux send delivers text but \n may not trigger a keypress in Claude Code.
+  cmux send --workspace "$WS_ID" "$TEXT" 2>/dev/null
+  sleep 0.3
+  cmux send-key --workspace "$WS_ID" "Enter" 2>/dev/null
 }
 
 _cmux_list() {

@@ -30,6 +30,10 @@ check_agents() {
   for ws_file in "$STATE"/*_workspace; do
     [[ -f "$ws_file" ]] || continue
     AGENT_ID=$(basename "$ws_file" _workspace)
+    # Never poke the manager — that's the human's terminal
+    [[ "$AGENT_ID" == *manager* ]] && continue
+    # Skip agents that have been marked done
+    [[ -f "$STATE/${AGENT_ID}_done" ]] && continue
     WS_ID=$(cat "$ws_file")
 
     # 1. Check if workspace exists
@@ -69,7 +73,9 @@ check_agents() {
           UNREAD=$((TOTAL - CURSOR))
           echo "[heartbeat] 📬 $AGENT_ID — idle at prompt with $UNREAD unread message(s) → waking"
           PROMPT="📬 You have $UNREAD unread message(s). Check $INBOX and respond."
-          cmux send --workspace "$WS_ID" "${PROMPT}"$'\n' 2>/dev/null || true
+          cmux send --workspace "$WS_ID" "$PROMPT" 2>/dev/null || true
+          sleep 0.3
+          cmux send-key --workspace "$WS_ID" "Enter" 2>/dev/null || true
           WOKEN=$((WOKEN + 1))
           continue
         fi

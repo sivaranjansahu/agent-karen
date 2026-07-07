@@ -93,11 +93,59 @@ pip3 install pyyaml
 
 ## Quick Start
 
-### 1. Create your config
+```bash
+cd ~/projects/my-app
+karen start
+```
+
+That's it. If the project isn't registered yet, `karen start` auto-registers it, sets up permissions, and launches the manager in your current terminal. No config editing required.
+
+### Talk to the manager
+
+```
+I want to build a multi-tenant invoicing SaaS for freelancers. MVP only.
+Spawn a PM and let's figure out the scope.
+```
+
+The manager spawns whatever agents it needs from there.
+
+### Monitor
 
 ```bash
-mkdir -p ~/.karen
-cat > ~/.karen/config.yaml << 'EOF'
+karen health                               # all agent statuses
+tail -f ~/.karen/hub/communications.md     # watch the conversation
+bd list                                    # task state
+```
+
+### Clean up
+
+```bash
+karen shutdown --all                       # stop everything
+karen shutdown --project myapp             # stop one project
+karen shutdown myapp-dev1                  # stop one agent
+```
+
+---
+
+## Adding knowledge or customizing a project
+
+After starting, use `karen add` to update the project's config without relaunching:
+
+```bash
+karen add --knowledge ./docs               # link a knowledge directory
+karen add --knowledge ./specs              # add another
+karen add --name better-name              # rename the project key
+```
+
+`karen add` is safe to re-run — it upserts, never duplicates.
+
+---
+
+## Starting multiple projects at once
+
+If you prefer to declare everything upfront and launch all at once, use `~/.karen/config.yaml` + `karen up`:
+
+```yaml
 hub: ~/.karen/hub
 
 projects:
@@ -111,72 +159,31 @@ projects:
       dev1: { role: dev }
       dev2: { role: dev }
       qa: { role: qa }
-EOF
 ```
-
-### 2. Start everything
 
 ```bash
-karen up
-```
-
-This creates the hub, sets up permissions, and spawns all `autostart: true` agents. The manager launches in its own workspace tab (`myapp:manager`).
-
-### 3. Talk to the manager
-
-```
-I want to build a multi-tenant invoicing SaaS for freelancers. MVP only.
-Spawn a PM and let's figure out the scope.
-```
-
-### 4. Monitor
-
-```bash
-karen health                               # all agent statuses
-karen health --project myapp               # filter by project
-karen config agents                        # list all defined agents
-tail -f ~/.karen/hub/communications.md     # watch the conversation
-bd list                                    # task state
-```
-
-### 5. Clean up
-
-```bash
-karen shutdown --all                       # stop everything
-karen shutdown --project myapp             # stop one project
-karen shutdown myapp-dev1                  # stop one agent
-karen shutdown --idle 15                   # reap idle agents
+karen up                    # spawn all autostart agents across all projects
+karen up --project myapp    # one project only
 ```
 
 ---
 
 ## Multi-Project Setup
 
-Define multiple projects in your config. Agents get unique IDs (`project-role`) and can message across projects:
-
-```yaml
-hub: ~/.karen/hub
-
-projects:
-  backend:
-    dir: ~/projects/api-server
-    knowledge:
-      - ~/projects/api-server/docs
-    agents:
-      manager: { role: manager, autostart: true }
-      dev1: { role: dev }
-
-  frontend:
-    dir: ~/projects/web-app
-    agents:
-      manager: { role: manager, autostart: true }
-      dev1: { role: dev }
-      ux: { role: ux }
-```
+Agents get unique IDs (`project-role`) and can message across projects:
 
 ```bash
-karen up                                            # starts both projects
-karen msg frontend-dev1 "API spec changed" message  # cross-project message
+# Register each project from its own directory
+cd ~/projects/api-server && karen start
+cd ~/projects/web-app    && karen start
+```
+
+Or declare them all in `~/.karen/config.yaml` and `karen up`.
+
+Cross-project messaging works automatically — full IDs resolve across hubs:
+
+```bash
+karen msg frontend-dev1 "API spec changed" message
 ```
 
 ---
@@ -184,7 +191,9 @@ karen msg frontend-dev1 "API spec changed" message  # cross-project message
 ## Commands
 
 ```bash
-karen up [--project <key>]                   # Start agents from config.yaml
+karen start [dir]                            # Launch manager (auto-registers if needed)
+karen add [--name <key>] [--knowledge <dir>] # Register/update a project in config
+karen up [--project <key>]                   # Spawn all autostart agents from config
 karen config {show|projects|agents}          # Inspect configuration
 karen spawn <agent_id> "<context>" [dir]     # Spawn an agent manually
 karen msg <target> "<message>" [type]        # Send a message

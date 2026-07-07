@@ -52,24 +52,7 @@ echo "{\"from\":\"$FROM\",\"type\":\"$TYPE\",\"ts\":\"$TIMESTAMP\",\"body\":$MSG
 
 echo "▸ Logged: $FROM → $TARGET_ID ($TYPE)"
 
-# 3. Relay to Mattermost (if configured)
-MM_ENV="$HUB_DIR/state/mattermost.env"
-if [[ -f "$MM_ENV" ]]; then
-  (
-    # shellcheck source=/dev/null
-    source "$MM_ENV"
-    if [[ -n "${MM_BOT_TOKEN:-}" && "$MM_BOT_TOKEN" != "PASTE_TOKEN_HERE" ]]; then
-      case "$TYPE" in
-        escalation) MM_CH="${MM_CHANNEL_ESCALATIONS:-escalations}" ;;
-        result)     MM_CH="${MM_CHANNEL_TASKS:-tasks}" ;;
-        *)          MM_CH="${MM_CHANNEL_GENERAL:-general}" ;;
-      esac
-      AGENT_ROLE="$FROM" "$ROOT/scripts/chat.sh" post "$FROM → $TARGET_ID ($TYPE): $MSG" "$MM_CH" 2>/dev/null || true
-    fi
-  )
-fi
-
-# 4. Push-trigger: wake the target terminal
+# 3. Push-trigger: wake the target terminal
 export KAREN_HUB_DIR="$HUB_DIR"
 source "$ROOT/lib/mux.sh"
 WS_FILE="$HUB_DIR/state/${TARGET_ID}_workspace"

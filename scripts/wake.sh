@@ -25,5 +25,7 @@ if [[ ! -f "$WS_FILE" ]]; then
 fi
 
 WS_ID=$(cat "$WS_FILE")
-cmux send --workspace "$WS_ID" "${TEXT}"$'\n' 2>/dev/null
+cmux send --workspace "$WS_ID" "$TEXT" 2>/dev/null
+sleep 0.3
+cmux send-key --workspace "$WS_ID" "Enter" 2>/dev/null
 echo "✓ Sent to $AGENT_ID"
