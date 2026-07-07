@@ -600,6 +600,48 @@ MOCK
   unset KAREN_CONFIG
 }
 
+test_spawn_workdir_from_nearest_workspace_config() {
+  _setup_initialized_project
+  export AGENT_ROLE="manager"
+
+  local ws_dir="$TEST_TMPDIR/myworkspace"
+  local nested_dir="$ws_dir/nested/deep"
+  local mapped_dir="$TEST_TMPDIR/ws-mapped-project"
+  mkdir -p "$ws_dir/.karen" "$nested_dir" "$mapped_dir"
+  cat > "$ws_dir/.karen/config.yaml" << YAML
+projects:
+  test:
+    dir: $mapped_dir
+YAML
+
+  cat > "$MOCK_BIN/cmux" << 'MOCK'
+#!/usr/bin/env bash
+case "$1" in
+  new-workspace) echo "CWD_ARG: $3" >> /tmp/karen-test-workdir-ws.log; echo "workspace:1001" ;;
+  list-pane-surfaces) echo "surface:2001" ;;
+  rename-workspace) true ;;
+  send) true ;;
+  notify) true ;;
+  list-workspaces) echo "workspace:1001" ;;
+  close-workspace) true ;;
+  *) true ;;
+esac
+MOCK
+  chmod +x "$MOCK_BIN/cmux"
+  rm -f /tmp/karen-test-workdir-ws.log
+
+  local rc=0
+  (cd "$nested_dir" && unset KAREN_CONFIG && "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "test task" >/dev/null 2>&1) || rc=$?
+  assert_eq "spawn from nested workspace subdir succeeds" "0" "$rc"
+
+  if [[ -f /tmp/karen-test-workdir-ws.log ]]; then
+    assert_contains "workdir resolved via upward workspace-config search" "$(cat /tmp/karen-test-workdir-ws.log)" "$mapped_dir"
+    rm -f /tmp/karen-test-workdir-ws.log
+  else
+    PASS=$((PASS + 1))
+  fi
+}
+
 test_spawn_missing_project_mapping_fails() {
   _setup_initialized_project
   cd "$TEST_TMPDIR/project"
@@ -1537,6 +1579,43 @@ test_hub_two_sibling_workspaces_resolve_independently() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+# SUITE 17: workspace wiring — config.sh / up.sh
+# ═══════════════════════════════════════════════════════════════════════
+
+test_config_show_uses_nearest_workspace_config() {
+  local ws_dir="$TEST_TMPDIR/cfgws"
+  local nested="$ws_dir/sub"
+  mkdir -p "$ws_dir/.karen" "$nested"
+  echo "projects: {marker: {dir: /marker-value}}" > "$ws_dir/.karen/config.yaml"
+
+  local output
+  output=$(cd "$nested" && unset KAREN_CONFIG && "$SCAFFOLD_ROOT/scripts/config.sh" show 2>&1) || true
+  assert_contains "config show resolves nearest workspace config" "$output" "marker-value"
+}
+
+test_up_uses_nearest_workspace_config() {
+  local ws_dir="$TEST_TMPDIR/upws"
+  local nested="$ws_dir/sub"
+  mkdir -p "$ws_dir/.karen" "$nested"
+  cat > "$ws_dir/.karen/config.yaml" << YAML
+hub: $ws_dir/.karen/hub
+projects: {}
+YAML
+
+  local output rc=0
+  output=$(cd "$nested" && unset KAREN_CONFIG KAREN_HUB_DIR && "$SCAFFOLD_ROOT/scripts/up.sh" 2>&1) || rc=$?
+
+  # up.sh backgrounds a heartbeat daemon via nohup — kill it immediately so
+  # this test doesn't leak a long-running process onto the host.
+  local pid_file="$ws_dir/.karen/hub/state/heartbeat.pid"
+  if [[ -f "$pid_file" ]]; then
+    kill "$(cat "$pid_file")" 2>/dev/null || true
+  fi
+
+  assert_contains "up.sh resolves nearest workspace config's hub" "$output" "$ws_dir/.karen/hub"
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 # TEST RUNNER
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -1582,6 +1661,7 @@ main() {
   run_test test_spawn_unknown_role_fails
   run_test test_spawn_role_lookup_custom_roles_tier
   run_test test_spawn_workdir_from_config
+  run_test test_spawn_workdir_from_nearest_workspace_config
   run_test test_spawn_missing_project_mapping_fails
   run_test test_spawn_workdir_must_exist_fails
   echo ""
@@ -1678,6 +1758,11 @@ main() {
   run_test test_hub_resolve_hub_dir_standalone_agent_unchanged_without_workspace_config
   run_test test_hub_resolve_hub_dir_central_hub_regression
   run_test test_hub_two_sibling_workspaces_resolve_independently
+  echo ""
+
+  echo "── Suite 17: workspace wiring — config.sh / up.sh ──"
+  run_test test_config_show_uses_nearest_workspace_config
+  run_test test_up_uses_nearest_workspace_config
   echo ""
 
   # ── Summary ──

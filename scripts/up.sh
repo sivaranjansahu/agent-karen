@@ -10,9 +10,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+source "$ROOT/lib/hub.sh"
 
 # Parse args
-CONFIG_FILE="${KAREN_CONFIG:-$HOME/.karen/config.yaml}"
+CONFIG_FILE=$(resolve_karen_config) || true
 FILTER_PROJECT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -51,8 +52,12 @@ echo ""
 eval "$(python3 -c "
 import yaml, os, json, sys
 
-config = yaml.safe_load(open(os.path.expanduser('$CONFIG_FILE')))
-hub = os.path.expanduser(config.get('hub', '~/.karen/hub'))
+config = yaml.safe_load(open(os.path.expanduser('$CONFIG_FILE'))) or {}
+# Self-contained workspace default: if the config declares no hub:, use the
+# config file's own directory (matches lib/hub.sh's resolve_hub_dir() ladder),
+# not a hardcoded global path — so a workspace needs no hand-wired hub.
+declared_hub = config.get('hub')
+hub = os.path.expanduser(declared_hub) if declared_hub else os.path.dirname(os.path.expanduser('$CONFIG_FILE'))
 scaffold = config.get('scaffold', 'auto')
 if scaffold == 'auto':
     scaffold = '$ROOT'

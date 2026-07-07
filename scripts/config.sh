@@ -8,7 +8,11 @@
 
 set -euo pipefail
 
-CONFIG_FILE="${KAREN_CONFIG:-$HOME/.karen/config.yaml}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+source "$ROOT/lib/hub.sh"
+
+CONFIG_FILE=$(resolve_karen_config) || true
 SUBCMD="${1:-show}"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then

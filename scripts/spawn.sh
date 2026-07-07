@@ -29,7 +29,9 @@ SHORT_ROLE=$(extract_role "$AGENT_ID")
 PROJECT_KEY=$(extract_project_key "$AGENT_ID")
 
 # Resolve working directory: explicit arg > configured project path > KAREN_PROJECT_DIR > pwd
-KAREN_CONFIG_FILE="${KAREN_CONFIG:-$HOME/.karen/config.yaml}"
+# (resolve_karen_config's return code just distinguishes workspace-found vs.
+# global-fallback — irrelevant here, we want the path either way.)
+KAREN_CONFIG_FILE=$(resolve_karen_config) || true
 CONFIGURED_DIR=""
 if [[ -z "${3:-}" && -n "$PROJECT_KEY" && -f "$KAREN_CONFIG_FILE" ]]; then
   CONFIGURED_DIR=$(python3 -c "
