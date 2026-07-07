@@ -7,12 +7,34 @@
 set -euo pipefail
 
 WORKDIR="${1:-$(pwd)}"
+WORKDIR="$(cd "$WORKDIR" && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "╔══════════════════════════════════════════╗"
 echo "║   agent-karen — talk to the manager      ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
+
+# ── 0. Auto-register project if not in config ─────────────────────────────
+CONFIG_FILE="${KAREN_CONFIG:-$HOME/.karen/config.yaml}"
+PROJECT_KEY="$(basename "$WORKDIR" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//;s/-$//')"
+
+ALREADY_REGISTERED=false
+if [[ -f "$CONFIG_FILE" ]]; then
+  if python3 -c "
+import yaml, os, sys
+config = yaml.safe_load(open(os.path.expanduser('$CONFIG_FILE'))) or {}
+sys.exit(0 if '$PROJECT_KEY' in config.get('projects', {}) else 1)
+" 2>/dev/null; then
+    ALREADY_REGISTERED=true
+  fi
+fi
+
+if [[ "$ALREADY_REGISTERED" == "false" ]]; then
+  echo "▸ Project '$PROJECT_KEY' not in config — registering..."
+  "$SCRIPT_DIR/scripts/add.sh" "$WORKDIR"
+  echo ""
+fi
 
 # ── 1. Check terminal multiplexer ─────────────────────────────────────────
 source "$SCRIPT_DIR/lib/mux.sh"
@@ -157,21 +179,19 @@ fi
 cp "$SCRIPT_DIR/roles/manager.md" "$WORKDIR/CLAUDE.md"
 echo "✓ CLAUDE.md set to manager role"
 
-# ── 8. Start Mattermost watcher (if configured) ─────────────────────────────
-MM_ENV="$WORKDIR/.agent/state/mattermost.env"
-if [[ -f "$MM_ENV" ]]; then
-  source "$MM_ENV"
-  if [[ -n "${MM_BOT_TOKEN:-}" && "$MM_BOT_TOKEN" != "PASTE_TOKEN_HERE" ]]; then
-    "$SCRIPT_DIR/scripts/mm-watch.sh" general tasks escalations > "$WORKDIR/.agent/state/mm-watch.log" 2>&1 &
-    MM_WATCH_PID=$!
-    echo "$MM_WATCH_PID" > "$WORKDIR/.agent/state/mm-watch.pid"
-    echo "✓ Mattermost watcher started (PID $MM_WATCH_PID)"
-  else
-    echo "⚠ Mattermost configured but bot token missing — skipping watcher"
-  fi
-else
-  echo "· Mattermost not configured — skipping watcher (run ./mattermost/setup.sh to enable)"
+# ── 8. Start heartbeat daemon ─────────────────────────────────────────────
+HEARTBEAT_PID_FILE="$WORKDIR/.agent/state/heartbeat.pid"
+# Kill any stale heartbeat from a previous session
+if [[ -f "$HEARTBEAT_PID_FILE" ]]; then
+  OLD_PID=$(cat "$HEARTBEAT_PID_FILE")
+  kill "$OLD_PID" 2>/dev/null || true
+  rm -f "$HEARTBEAT_PID_FILE"
 fi
+export KAREN_HUB_DIR="$WORKDIR/.agent"
+"$SCRIPT_DIR/scripts/heartbeat.sh" loop 20 > "$WORKDIR/.agent/state/heartbeat.log" 2>&1 &
+HEARTBEAT_PID=$!
+echo "$HEARTBEAT_PID" > "$HEARTBEAT_PID_FILE"
+echo "✓ Heartbeat daemon started (PID $HEARTBEAT_PID, every 20s)"
 
 # ── 9. Sidebar status ──────────────────────────────────────────────────────
 export AGENT_ROLE="manager"
@@ -187,4 +207,4 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 cd "$WORKDIR"
-exec claude
+exec claude --dangerously-skip-permissions

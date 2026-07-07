@@ -16,10 +16,6 @@
 .dolt/
 *.db
 
-# Mattermost runtime state
-.agent/state/mattermost.env
-.agent/state/mm_channel_*
-
 # OS junk
 .DS_Store
 

@@ -140,7 +140,9 @@ for line in human_lines:
         if [[ -f "$MANAGER_WS_FILE" ]]; then
           WS_ID=$(cat "$MANAGER_WS_FILE")
           PROMPT="📬 New Slack message. Check inbox and respond via slack-send.sh."
-          cmux send --workspace "$WS_ID" "${PROMPT}"$'\n' 2>/dev/null || true
+          cmux send --workspace "$WS_ID" "$PROMPT" 2>/dev/null || true
+          sleep 0.3
+          cmux send-key --workspace "$WS_ID" "Enter" 2>/dev/null || true
         fi
       fi
     fi

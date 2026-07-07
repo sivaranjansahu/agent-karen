@@ -2,14 +2,15 @@
 # karen — "I want to talk to the manager."
 #
 # Usage:
-#   karen up [--project <key>]                   Start agents from config.yaml
-#   karen config {show|projects|agents}           Inspect configuration
-#   karen init <project> [--knowledge <dir>]      Initialize a project
-#   karen start <project>                         Start the manager agent
-#   karen spawn <agent_id> "<context>" [dir]      Spawn an agent
-#   karen msg <target> "<message>" [type]         Send a message
-#   karen health [--project <key>]                Check agent health
-#   karen shutdown <agent|--all|--project <key>>  Shut down agents
+#   karen add [--name <key>] [--knowledge <dir>]  Register current dir as a project
+#   karen up [--project <key>]                    Start agents from config.yaml
+#   karen config {show|projects|agents}            Inspect configuration
+#   karen init <project> [--knowledge <dir>]       Initialize a project
+#   karen start <project>                          Start the manager agent
+#   karen spawn <agent_id> "<context>" [dir]       Spawn an agent
+#   karen msg <target> "<message>" [type]          Send a message
+#   karen health [--project <key>]                 Check agent health
+#   karen shutdown <agent|--all|--project <key>>   Shut down agents
 
 set -euo pipefail
 
@@ -28,6 +29,9 @@ CMD="${1:-help}"
 shift || true
 
 case "$CMD" in
+  add|register)
+    exec "$ROOT/scripts/add.sh" "$@"
+    ;;
   up)
     exec "$ROOT/scripts/up.sh" "$@"
     ;;
@@ -66,14 +70,15 @@ Multi-agent coordination for Claude Code. Define your team in config.yaml,
 run `karen up`, and talk to the manager.
 
 Usage:
-  karen up [--project <key>]                 Start agents from ~/.karen/config.yaml
-  karen config {show|projects|agents}        Inspect configuration
-  karen init <project> [--knowledge <dir>]   Initialize a single project
-  karen start <project>                      Start the manager agent
-  karen spawn <agent_id> "<context>" [dir]   Spawn an agent
-  karen msg <target> "<message>" [type]      Send a message to an agent
-  karen health [--project <key>]             Check agent health
-  karen shutdown <id|--all|--project <key>>  Shut down agents
+  karen add [--name <key>] [--knowledge <dir>]  Register current dir as a project
+  karen up [--project <key>]                    Start agents from ~/.karen/config.yaml
+  karen config {show|projects|agents}           Inspect configuration
+  karen init <project> [--knowledge <dir>]      Initialize a single project
+  karen start <project>                         Start the manager agent
+  karen spawn <agent_id> "<context>" [dir]      Spawn an agent
+  karen msg <target> "<message>" [type]         Send a message to an agent
+  karen health [--project <key>]                Check agent health
+  karen shutdown <id|--all|--project <key>>     Shut down agents
 
 Config file: ~/.karen/config.yaml
 
@@ -89,6 +94,8 @@ Config file: ~/.karen/config.yaml
         dev1: { role: dev }
 
 Examples:
+  karen add                                  # register current dir (key = dirname)
+  karen add --name api --knowledge ./docs    # explicit key + knowledge
   karen up                                   # start all autostart agents
   karen up --project myproject               # start one project only
   karen config agents                        # list all defined agents

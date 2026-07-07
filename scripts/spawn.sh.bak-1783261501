@@ -236,7 +236,7 @@ MESSAGING: Use msg.sh for all communication. Short names work within your projec
   $ROOT/scripts/msg.sh tagger-dev1 \"hello\" message  → cross-project messaging
 NEVER call cmux send directly — always use msg.sh or wake.sh.
 
-IMPORTANT: After completing your current task, check your inbox ($HUB_DIR/inbox/${AGENT_ID}.jsonl) for new messages before exiting. If inbox has no new tasks, report to your coordinator that you are idle and available. Only exit if explicitly told to or if no new work arrives within 600 seconds (10 minutes).
+IMPORTANT: After completing your current task, check your inbox ($HUB_DIR/inbox/${AGENT_ID}.jsonl) for new messages before exiting. If inbox has no new tasks, report to your coordinator that you are idle and available. Only exit if explicitly told to or if no new work arrives within 60 seconds.
 
 IMPORTANT: Before you finish your session, write key learnings, decisions, and context you want to preserve to $HUB_DIR/memory/${AGENT_ID}.md so your next spawn can pick up where you left off."
 EOF

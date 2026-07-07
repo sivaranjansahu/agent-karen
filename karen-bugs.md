@@ -122,3 +122,51 @@ When spawning dev1/dev2/dev3, spawn.sh keeps resolving to workspace:19 (lead's w
 **Impact:** Agents get spawned into the wrong workspace. When that workspace dies, both agents die together.
 **Fix:** Use word-boundary matching or match against workspace title only, not full output. E.g., `grep -qw "$SHORT_ROLE"` or better, match against a structured field instead of freetext grep.
 **Discovered:** 2026-03-28 — lead and dev1 both ended up in workspace:19
+
+## 2026-06-20 — dev3 session dies repeatedly when idle
+- dev3 (workspace 17) vanished from health.sh roster TWICE in one session, both times shortly after going idle (post-task). Symptom on msg.sh sends: "⚠ State file missing but dev3 appears alive — message queued in inbox" while health.sh shows it ABSENT.
+- Impact: lost the assigned agent mid/post-task; had to respawn via spawn.sh (inbox + memory survived, resumed cleanly). Other agents (dev1/dev2/qa/ux) stayed healthy the whole session — appears dev3-workspace-specific.
+- Signal for managers/leads: treat the "state file missing but appears alive" warning as probable death; confirm via health.sh roster, respawn if absent.
+
+## 2026-06-20 (update) — dev3 workspace:17 died 4x in one session
+- dev3 has now died FOUR times, each shortly after going idle/receiving a new task assignment ("State file missing but appears alive" on msg.sh send -> absent from health.sh roster). Respawned each time via spawn.sh (inbox + memory survive, resumes cleanly). dev1/dev2 on the same backend never died. Strongly workspace-17-specific. Recommend the scaffold team investigate cmux workspace 17 state-file persistence.
+
+## msg.sh wake fails when agent state file is missing (2026-06-21)
+- Symptom: new role (uitest) was alive in its cmux workspace, but `msg.sh` printed "State file missing but uitest appears alive — message queued in inbox" and did NOT wake it. Messages piled unread; agent sat idle.
+- Contrast: `spawn.sh` reuse-path ("already alive — reusing") DID wake it successfully with the same agent.
+- Impact: messages to an agent whose state file is missing/stale are silently not delivered (no wake). Breaks the standing-agent ping model.
+- Likely cause: a stale `<role>_done` marker / missing `<role>_workspace` state file makes msg.sh skip the wake. Also: agents shutting down on idle leave no live process to wake.
+- Fix ideas: msg.sh should fall back to the same wake path spawn.sh uses; or treat "state file missing" as "respawn-and-deliver". And/or give roles a "stay-alive" default.
+
+##  — msg.sh/health.sh blind to agent with missing state file
+- **Symptom:** dev1 (workspace:29) was alive and coding, but `health.sh` did not list it at all and `msg.sh pm/dev1` wake failed with "state file missing". Manager mistakenly read this as "agent down".
+- **Impact:** false agent-down alarms; manager cannot wake/monitor the agent via the standard scripts; must fall back to `cmux send` + read-screen.
+- **Repro:** agent workspace loses/never-writes its state file -> invisible to health.sh + unroutable via msg.sh, yet the cmux workspace is live.
+- **Fix idea:** health.sh should enumerate live cmux workspaces (not just state files) and flag "alive but stateless"; msg.sh should fall back to cmux send when state file absent.
+
+## 2026-06-22 — uitest unbounded wait on a buggy UI state (deadlock)
+- **Symptom:** uitest ran `until agent-browser snapshot | grep 'DONE'; do sleep 8; done` with NO timeout, waiting for a BUILDING->DELIVERED "DONE" UI state. B8 (FE DELIVERED reflection) is an unfixed bug -> the state may never render -> uitest hangs forever, holding the container pool.
+- **Lesson:** (1) ALL agent waits must be bounded with a timeout. (2) A test must NOT gate its own flow on a UI state that an unfixed bug-under-test could prevent — detect progress via independent signals (files written, container_log, docker state), not the buggy completion card.
+- **Fix:** add bounded-wait pattern to uitest runbook; never `until <cond>` without a max-iterations exit.
+
+## spawn.sh false-positive aliveness check (2026-06-23)
+**Bug:** spawn.sh's reuse-check reports an agent ALIVE when the cmux pane exists but the Claude process is DEAD (sitting at a zsh prompt, e.g. after an OOM-kill: "zsh: killed claude"). It then "re-uses" the workspace and sends task text to a dead shell (manifests as the shell echoing "command not found: 📬"), so the respawn silently no-ops.
+**Repro:** agent's Claude proc dies (OOM/crash) but cmux pane survives → spawn.sh <role> sees the pane and skips spawning.
+**Reliable workaround:** shutdown.sh the stale workspace, THEN spawn.sh fresh (force-respawn). Confirmed working (dev2 → workspace:32).
+**Fix idea:** aliveness check should probe the actual Claude process (not just pane existence) — e.g. check for a live claude PID / responsive session, not a bare pane.
+
+## dev2 respawn flakiness — blank boot + failed wake (2026-06-23)
+**Bug:** After dev2's OOM-death, respawn was unreliable even via the shutdown.sh+spawn.sh workaround: workspace:32 booted to a BLANK screen with a failed wake ("Send failed — message queued"); re-respawn to :33 also booted blank, no activity/commits. Health shows the workspace ✓ but Claude isn't receiving/progressing. Not OOM (memory was clear at the time).
+**Impact:** blocked the agent's task until the lead ROUTED AROUND it (reassigned the task to another agent).
+**Hypothesis:** corrupt/stale cmux workspace state surviving shutdown.sh+spawn.sh; may need a full cmux workspace teardown + fresh-create (not just role respawn).
+**Open:** reliable infra-level "hard reset a wedged agent workspace" procedure needed.
+
+## 2026-07-05 — cmux keystroke-wake channel wedged for ALL sends; wake must be respawn-based
+**Symptom:** Every attempt to inject input into a running Claude-TUI tab failed this session, across all agents/paths: manual `cmux send`/`send-key` (keys never land; backspaces + Ctrl+U no-op), spawn.sh's own initial-prompt send (`Error: internal_error: Surface not ready`), and the msg.sh wake nudge (`⚠ Send failed — message queued in inbox`). read-screen also throws `Surface is not a terminal` on the TUI surface. A respawned lead showed `health ✓` (process up) but was wedged — never received its boot prompt, never acted on inbox — matching the 2026-06-23 "blank boot + failed wake" entry.
+**Impact:** message DELIVERY (file bus → inbox jsonl) is reliable, but WAKE (poking a TUI to read its inbox) is broken → agents sit up-but-idle with unread tasks; the whole steering layer is non-functional. Had to bypass agents entirely and run the fdecareers deploy manually to unblock.
+**Root-cause reframe:** the fragile thing is keystroke-injection INTO A RUNNING TUI. Creating a workspace (spawn) works; typing into an existing session does not. So:
+- **Wake = RESPAWN, never nudge.** Watchdog should detect "unread inbox / stale heartbeat / half-started" and RESPAWN the agent (fresh `claude` reads inbox on boot), not send cmux keystrokes. heartbeat.sh currently only nudges (flaky) or escalates dead agents to manager — it must auto-respawn.
+- **Fix the spawn-race** ("Surface not ready" during spawn → agent never gets its boot prompt → wedged-but-"alive").
+- **Agents exit on idle → go DOWN → inbox pile-up** (observed dev1=415, dev2=383 unread on DOWN agents). CHANGED TODAY: spawn.sh idle-exit `60s → 600s` (10 min) as a stopgap (backup: spawn.sh.bak-*). Real fix = auto-respawn-on-unread-message so DOWN agents get drained.
+- **3 duplicate stale heartbeat.sh daemons** running (from Jun 23 / Tue / Fri) → collapse to one supervised instance (launchd plist exists).
+**Backlog (priority order):** (1) wake-via-respawn watchdog that drains unread inboxes + hard-resets wedged/half-started workspaces; (2) fix spawn "Surface not ready" race; (3) auto-respawn on stale heartbeat; (4) dedupe heartbeat daemons. Note: NONE of this is a regression — scaffold code was unchanged in the last 2 days (verified via mtime); this is pre-existing design debt.

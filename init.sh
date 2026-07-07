@@ -214,14 +214,14 @@ hooks = settings.setdefault('hooks', {})
 ups = hooks.setdefault('UserPromptSubmit', [])
 if not any('check-inbox' in str(h) for h in ups):
     ups.append({'matcher': '', 'hooks': [
-        {'type': 'command', 'command': '.agent/hooks/check-inbox.sh'}
+        {'type': 'command', 'command': f'{scaffold_root}/hooks/check-inbox.sh'}
     ]})
 
 stop = hooks.setdefault('Stop', [])
 if not any('notify-done' in str(h) for h in stop):
     stop.append({'matcher': '', 'hooks': [
-        {'type': 'command', 'command': '.agent/hooks/notify-done.sh'},
-        {'type': 'command', 'command': '.agent/hooks/auto-shutdown.sh'}
+        {'type': 'command', 'command': f'{scaffold_root}/hooks/notify-done.sh'},
+        {'type': 'command', 'command': f'{scaffold_root}/hooks/auto-shutdown.sh'}
     ]})
 
 # Write
