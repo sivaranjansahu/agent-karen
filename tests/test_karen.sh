@@ -855,6 +855,8 @@ test_cli_help() {
   assert_contains "help shows msg" "$output" "karen msg"
   assert_contains "help shows health" "$output" "karen health"
   assert_contains "help shows shutdown" "$output" "karen shutdown"
+  assert_contains "help shows where" "$output" "karen where"
+  assert_contains "help presents workspace model" "$output" "workspace"
 }
 
 test_cli_where_resolves_hub() {

@@ -64,6 +64,34 @@ Agents in different projects can message each other. Short names work within a p
 
 ---
 
+## Architecture: Workspace-Based Multiagent Coordination
+
+For a repo you want fully self-contained — its own hub, its own state, nothing hand-wired into a global config — drop a `.karen/config.yaml` at its root:
+
+```
+my-workspace/
+  .karen/
+    config.yaml     # projects/agents for this workspace only
+    hub/             # this workspace's own inbox/state/memory/beads
+                     # (default when config.yaml declares no `hub:` key)
+  src/
+  ...
+```
+
+Run `karen` (any command — `spawn`, `msg`, `status`, `where`, ...) from anywhere inside `my-workspace/`, including nested subdirectories, and it finds this config via an **upward search** — nearest wins. Multiple independent workspaces coexist on one machine without touching each other's state or the global hub.
+
+Resolution is one ladder, checked in order, for both which config applies and (derived from it) which hub applies:
+
+1. **Explicit override** — `$KAREN_CONFIG` env var, or `$KAREN_HUB_DIR` / `$KAREN_PROJECT_AGENT_DIR` for the hub directly. Highest priority; this is how a central-hub setup (`karen up`) and any script that already exports these keeps working unchanged.
+2. **Nearest workspace config** — walk up from `$PWD` to `/`, first `.karen/config.yaml` found wins. Its hub is that config's own `hub:` key if declared, otherwise the config's own directory (`.karen/`) — self-contained, no hand-wired path needed.
+3. **Global fallback** — `~/.karen/config.yaml` (the central-hub setup above).
+
+If neither a workspace config nor an explicit override applies, standalone project-local `.agent/` discovery (the original, pre-hub model) still works exactly as before.
+
+Run `karen where` (or `karen paths`) anywhere to see exactly what resolved and why — the workspace root, which config won and via which tier, the hub directory and its tier, and every state/inbox/memory/context path.
+
+---
+
 ## Prerequisites
 
 - [Claude Code](https://claude.ai/code) (`npm install -g @anthropic-ai/claude-code`)
@@ -199,6 +227,9 @@ karen spawn <agent_id> "<context>" [dir]     # Spawn an agent manually
 karen msg <target> "<message>" [type]        # Send a message
 karen health [--project <key>]               # Check agent health
 karen shutdown <id|--all|--project|--idle>   # Shut down agents
+karen where                                  # Resolved path model: workspace root,
+                                              #  which config/hub won and via which
+                                              #  tier (aliases: karen paths)
 ```
 
 ---
@@ -245,12 +276,15 @@ Spawned agents receive these automatically:
 
 | Variable | Example | Purpose |
 |----------|---------|---------|
-| `KAREN_HUB_DIR` | `~/.karen/hub` | Central hub for all state |
+| `KAREN_HUB_DIR` | `~/.karen/hub` | Explicit hub override — highest priority |
+| `KAREN_CONFIG` | `~/.karen/config.yaml` | Explicit config override — highest priority |
 | `KAREN_AGENT_ID` | `myapp-dev1` | Full agent identity |
 | `KAREN_PROJECT_KEY` | `myapp` | Project namespace |
 | `KAREN_PROJECT_DIR` | `~/projects/my-app` | Code working directory |
 | `AGENT_ROLE` | `dev` | Short role name |
 | `AGENT_SCAFFOLD_ROOT` | `/path/to/scaffold` | Karen scripts location |
+
+Neither is required day-to-day — a `.karen/config.yaml` at your workspace root (upward-searched, nearest wins) or the global `~/.karen/config.yaml` fallback covers everything; see [Architecture: Workspace-Based Multiagent Coordination](#architecture-workspace-based-multiagent-coordination). Set `KAREN_HUB_DIR`/`KAREN_CONFIG` only to pin a specific hub/config regardless of cwd.
 
 ---
 

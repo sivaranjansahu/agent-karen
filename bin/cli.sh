@@ -70,8 +70,13 @@ case "$CMD" in
     cat <<'HELP'
 agent-karen — "I want to talk to the manager."
 
-Multi-agent coordination for Claude Code. Define your team in config.yaml,
-run `karen up`, and talk to the manager.
+Workspace-based multiagent coordination for Claude Code. Define your team in
+config.yaml, run `karen up`, and talk to the manager — or drop a
+.karen/config.yaml at the root of any directory tree to make it a
+self-contained workspace with its own hub/state/inbox, discovered
+automatically (upward search, nearest wins) from anywhere inside it. See
+`karen where` and the README's "Architecture: Workspace-Based Multiagent
+Coordination" section.
 
 Usage:
   karen add [--name <key>] [--knowledge <dir>]  Register current dir as a project
@@ -109,6 +114,8 @@ Examples:
   karen msg other-manager "Need API" message # cross-project message
   karen health                               # check all agents
   karen shutdown --all                       # stop everything
+  echo 'projects: {}' > .karen/config.yaml   # make cwd a self-contained workspace
+  karen where                                # show resolved workspace/hub/config + tier
 
 Backends (auto-detected): cmux, tmux, terminal (macOS)
 
