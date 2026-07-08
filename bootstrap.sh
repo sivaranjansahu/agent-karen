@@ -2,9 +2,21 @@
 # bootstrap.sh — start the manager session in the current cmux workspace
 #
 # Run this ONCE to kick off the entire system.
-# Usage: ./bootstrap.sh [working_dir]
+# Usage: ./bootstrap.sh [--runtime <claude|pi>] [working_dir]
 
 set -euo pipefail
+
+# ── Parse --runtime flag (may appear anywhere); everything else stays positional ──
+RUNTIME_ARG=""
+POSITIONAL_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --runtime) RUNTIME_ARG="${2:?--runtime requires a value}"; shift 2 ;;
+    --runtime=*) RUNTIME_ARG="${1#--runtime=}"; shift ;;
+    *) POSITIONAL_ARGS+=("$1"); shift ;;
+  esac
+done
+set -- "${POSITIONAL_ARGS[@]+"${POSITIONAL_ARGS[@]}"}"
 
 WORKDIR="${1:-$(pwd)}"
 WORKDIR="$(cd "$WORKDIR" && pwd)"
@@ -35,6 +47,28 @@ if [[ "$ALREADY_REGISTERED" == "false" ]]; then
   "$SCRIPT_DIR/scripts/add.sh" "$WORKDIR"
   echo ""
 fi
+
+# Runtime selection (manager tier-1). Precedence: --runtime arg / SPAWN_RUNTIME
+# env (spawn-time, always wins) > config.yaml project runtime (default) >
+# "claude" (global default). Mirrors spawn.sh's agent-level seam.
+CONFIG_RUNTIME=""
+if [[ -f "$CONFIG_FILE" ]]; then
+  CONFIG_RUNTIME=$(python3 -c "
+import yaml, os
+config = yaml.safe_load(open(os.path.expanduser('$CONFIG_FILE'))) or {}
+proj = (config.get('projects') or {}).get('$PROJECT_KEY') or {}
+print(proj.get('runtime') or '', end='')
+" 2>/dev/null || true)
+fi
+EFFECTIVE_RUNTIME="${RUNTIME_ARG:-${SPAWN_RUNTIME:-${CONFIG_RUNTIME:-claude}}}"
+
+case "$EFFECTIVE_RUNTIME" in
+  claude|pi) ;;
+  *)
+    echo "ERROR: unknown runtime '$EFFECTIVE_RUNTIME' (supported: claude, pi)" >&2
+    exit 1
+    ;;
+esac
 
 # ── 1. Check terminal multiplexer ─────────────────────────────────────────
 source "$SCRIPT_DIR/lib/mux.sh"
@@ -204,11 +238,18 @@ cmux log --level info "Manager session started" 2>/dev/null || true
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Ready. Launching Claude Code as manager..."
+echo "Ready. Launching $EFFECTIVE_RUNTIME as manager..."
 echo ""
 echo 'First prompt: "I want to build [your product]. Spawn a PM and let'\''s brainstorm."'
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
 cd "$WORKDIR"
-exec claude --dangerously-skip-permissions
+# claude path is byte-for-byte identical to before this feature existed; pi
+# is strictly opt-in. No initial prompt either way — the human types the
+# first message (see "First prompt" hint above).
+if [[ "$EFFECTIVE_RUNTIME" == "pi" ]]; then
+  exec pi --tools bash,read,write,edit
+else
+  exec claude --dangerously-skip-permissions
+fi

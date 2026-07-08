@@ -1823,6 +1823,253 @@ test_heartbeat_ignores_stale_pidfile_of_unrelated_process() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+# Suite 19: pluggable agent runtime (claude|pi) — EFFECTIVE_RUNTIME seam
+# ═══════════════════════════════════════════════════════════════════════
+
+# spawn.sh never actually execs claude/pi in tests — it sends the BOOTSTRAP
+# text via `cmux send` to a real terminal. Capture that text the same way
+# test_spawn_bootstrap_includes_env_vars does.
+_capture_spawn_launch() {
+  cat > "$MOCK_BIN/cmux" << 'MOCK'
+#!/usr/bin/env bash
+case "$1" in
+  ping) exit 0 ;;
+  new-workspace) echo "workspace:1001" ;;
+  list-pane-surfaces) echo "surface:2001" ;;
+  rename-workspace) true ;;
+  send) echo "LAUNCH_CMD: $@" >> /tmp/karen-test-runtime-launch.log; true ;;
+  notify) true ;;
+  list-workspaces) echo "workspace:1001" ;;
+  close-workspace) true ;;
+  *) true ;;
+esac
+MOCK
+  chmod +x "$MOCK_BIN/cmux"
+  rm -f /tmp/karen-test-runtime-launch.log
+}
+
+_read_spawn_launch() {
+  if [[ -f /tmp/karen-test-runtime-launch.log ]]; then
+    cat /tmp/karen-test-runtime-launch.log
+    rm -f /tmp/karen-test-runtime-launch.log
+  fi
+}
+
+test_spawn_runtime_defaults_to_claude() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+  _capture_spawn_launch
+
+  local rc=0
+  "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
+  assert_eq "plain spawn succeeds" "0" "$rc"
+  local launch; launch=$(_read_spawn_launch)
+  assert_contains "no runtime specified defaults to claude" "$launch" "claude --dangerously-skip-permissions"
+}
+
+test_spawn_runtime_arg_selects_pi() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+  _capture_spawn_launch
+
+  local rc=0
+  "$SCAFFOLD_ROOT/scripts/spawn.sh" --runtime pi pm "test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
+  assert_eq "--runtime pi spawn succeeds" "0" "$rc"
+  local launch; launch=$(_read_spawn_launch)
+  assert_contains "--runtime pi dispatches to pi" "$launch" "pi --tools bash,read,write,edit"
+}
+
+test_spawn_runtime_env_selects_pi() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+  export SPAWN_RUNTIME="pi"
+  _capture_spawn_launch
+
+  local rc=0
+  "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
+  unset SPAWN_RUNTIME
+  assert_eq "SPAWN_RUNTIME=pi spawn succeeds" "0" "$rc"
+  local launch; launch=$(_read_spawn_launch)
+  assert_contains "SPAWN_RUNTIME=pi dispatches to pi" "$launch" "pi --tools bash,read,write,edit"
+}
+
+test_spawn_runtime_config_project_default() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+  export KAREN_CONFIG="$TEST_TMPDIR/runtime-config.yaml"
+  cat > "$KAREN_CONFIG" << YAML
+projects:
+  test:
+    runtime: pi
+YAML
+  _capture_spawn_launch
+
+  local rc=0
+  "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
+  unset KAREN_CONFIG
+  assert_eq "config-default-runtime spawn succeeds" "0" "$rc"
+  local launch; launch=$(_read_spawn_launch)
+  assert_contains "config.yaml project-level runtime default honored" "$launch" "pi --tools bash,read,write,edit"
+}
+
+test_spawn_runtime_config_agent_override_wins_over_project_default() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+  export KAREN_CONFIG="$TEST_TMPDIR/runtime-config.yaml"
+  cat > "$KAREN_CONFIG" << YAML
+projects:
+  test:
+    runtime: claude
+    agents:
+      pm:
+        role: pm
+        runtime: pi
+YAML
+  _capture_spawn_launch
+
+  local rc=0
+  "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
+  unset KAREN_CONFIG
+  assert_eq "per-agent-override spawn succeeds" "0" "$rc"
+  local launch; launch=$(_read_spawn_launch)
+  assert_contains "per-agent config runtime overrides project default" "$launch" "pi --tools bash,read,write,edit"
+}
+
+test_spawn_runtime_arg_overrides_config() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+  export KAREN_CONFIG="$TEST_TMPDIR/runtime-config.yaml"
+  cat > "$KAREN_CONFIG" << YAML
+projects:
+  test:
+    runtime: pi
+YAML
+  _capture_spawn_launch
+
+  local rc=0
+  "$SCAFFOLD_ROOT/scripts/spawn.sh" --runtime claude pm "test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
+  unset KAREN_CONFIG
+  assert_eq "--runtime claude override spawn succeeds" "0" "$rc"
+  local launch; launch=$(_read_spawn_launch)
+  assert_contains "spawn-time --runtime arg outranks config default" "$launch" "claude --dangerously-skip-permissions"
+}
+
+test_spawn_claude_launch_unchanged() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+  _capture_spawn_launch
+
+  local rc=0
+  "$SCAFFOLD_ROOT/scripts/spawn.sh" pm "test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
+  assert_eq "unchanged-claude-path spawn succeeds" "0" "$rc"
+  local launch; launch=$(_read_spawn_launch)
+  # Byte-for-byte: the same prefix immediately followed by the orientation
+  # prompt's opening line, exactly as before this feature existed.
+  assert_contains "claude launch is byte-for-byte unchanged" "$launch" 'claude --dangerously-skip-permissions "You have been activated as test-pm'
+}
+
+test_spawn_pi_launch_omits_claude_specific_flags() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+  _capture_spawn_launch
+
+  local rc=0
+  "$SCAFFOLD_ROOT/scripts/spawn.sh" --runtime pi pm "test" "$TEST_TMPDIR/project" >/dev/null 2>&1 || rc=$?
+  assert_eq "pi-flags spawn succeeds" "0" "$rc"
+  local launch; launch=$(_read_spawn_launch)
+  assert_contains "pi launch has bash in --tools" "$launch" "--tools bash,read,write,edit"
+  local has_skip_perms=no has_rc=no
+  echo "$launch" | grep -qF -- "--dangerously-skip-permissions" && has_skip_perms=yes
+  echo "$launch" | grep -qF -- "--remote-control" && has_rc=yes
+  assert_eq "pi launch omits --dangerously-skip-permissions (claude-only)" "no" "$has_skip_perms"
+  assert_eq "pi launch omits --remote-control (claude-only)" "no" "$has_rc"
+}
+
+test_spawn_unknown_runtime_fails() {
+  _setup_initialized_project
+  cd "$TEST_TMPDIR/project"
+  export AGENT_ROLE="manager"
+
+  local rc=0 output
+  output=$("$SCAFFOLD_ROOT/scripts/spawn.sh" --runtime bogus pm "test" "$TEST_TMPDIR/project" 2>&1) || rc=$?
+  assert_eq "unknown runtime exits nonzero" "1" "$rc"
+  assert_contains "unknown runtime error message" "$output" "unknown runtime"
+}
+
+# bootstrap.sh execs claude/pi directly (no cmux send) — mock the binaries
+# themselves and capture their own invocation.
+_capture_bootstrap_launch() {
+  cat > "$MOCK_BIN/claude" << 'MOCK'
+#!/usr/bin/env bash
+echo "CLAUDE_ARGS: $@" >> /tmp/karen-test-bootstrap-launch.log
+exit 0
+MOCK
+  chmod +x "$MOCK_BIN/claude"
+
+  cat > "$MOCK_BIN/pi" << 'MOCK'
+#!/usr/bin/env bash
+echo "PI_ARGS: $@" >> /tmp/karen-test-bootstrap-launch.log
+exit 0
+MOCK
+  chmod +x "$MOCK_BIN/pi"
+
+  rm -f /tmp/karen-test-bootstrap-launch.log
+}
+
+_read_bootstrap_launch() {
+  if [[ -f /tmp/karen-test-bootstrap-launch.log ]]; then
+    cat /tmp/karen-test-bootstrap-launch.log
+    rm -f /tmp/karen-test-bootstrap-launch.log
+  fi
+}
+
+test_bootstrap_runtime_defaults_to_claude() {
+  cd "$TEST_TMPDIR/project"
+  _capture_bootstrap_launch
+
+  "$SCAFFOLD_ROOT/bootstrap.sh" "$TEST_TMPDIR/project" 2>/dev/null || true
+  local launch; launch=$(_read_bootstrap_launch)
+
+  assert_contains "bootstrap defaults to claude" "$launch" "CLAUDE_ARGS: --dangerously-skip-permissions"
+}
+
+test_bootstrap_runtime_arg_selects_pi() {
+  cd "$TEST_TMPDIR/project"
+  _capture_bootstrap_launch
+
+  "$SCAFFOLD_ROOT/bootstrap.sh" --runtime pi "$TEST_TMPDIR/project" 2>/dev/null || true
+  local launch; launch=$(_read_bootstrap_launch)
+
+  assert_contains "bootstrap --runtime pi dispatches to pi" "$launch" "PI_ARGS: --tools bash,read,write,edit"
+}
+
+test_bootstrap_runtime_config_project_default() {
+  cd "$TEST_TMPDIR/project"
+  export KAREN_CONFIG="$TEST_TMPDIR/bootstrap-runtime-config.yaml"
+  cat > "$KAREN_CONFIG" << YAML
+projects:
+  project:
+    dir: $TEST_TMPDIR/project
+    runtime: pi
+YAML
+  _capture_bootstrap_launch
+
+  "$SCAFFOLD_ROOT/bootstrap.sh" "$TEST_TMPDIR/project" 2>/dev/null || true
+  local launch; launch=$(_read_bootstrap_launch)
+  unset KAREN_CONFIG
+
+  assert_contains "bootstrap honors config.yaml project runtime default" "$launch" "PI_ARGS:"
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 # TEST RUNNER
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -1984,6 +2231,21 @@ main() {
   run_test test_heartbeat_dead_agent_escalates_once_across_ticks
   run_test test_heartbeat_recovered_agent_reescalates_on_next_death
   run_test test_heartbeat_ignores_stale_pidfile_of_unrelated_process
+  echo ""
+
+  echo "── Suite 19: pluggable agent runtime (claude|pi) ──"
+  run_test test_spawn_runtime_defaults_to_claude
+  run_test test_spawn_runtime_arg_selects_pi
+  run_test test_spawn_runtime_env_selects_pi
+  run_test test_spawn_runtime_config_project_default
+  run_test test_spawn_runtime_config_agent_override_wins_over_project_default
+  run_test test_spawn_runtime_arg_overrides_config
+  run_test test_spawn_claude_launch_unchanged
+  run_test test_spawn_pi_launch_omits_claude_specific_flags
+  run_test test_spawn_unknown_runtime_fails
+  run_test test_bootstrap_runtime_defaults_to_claude
+  run_test test_bootstrap_runtime_arg_selects_pi
+  run_test test_bootstrap_runtime_config_project_default
   echo ""
 
   # ── Summary ──

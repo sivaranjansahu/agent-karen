@@ -2,7 +2,7 @@
 # spawn.sh — create a new workspace, launch an agent, and log to communications.md
 #
 # Usage:
-#   ./scripts/spawn.sh <agent_id_or_role> "<context>" [working_dir]
+#   ./scripts/spawn.sh [--runtime <claude|pi>] <agent_id_or_role> "<context>" [working_dir]
 #
 # agent_id_or_role:
 #   - Full agent ID: "prepare-dev1" (explicit)
@@ -12,10 +12,23 @@
 #   ./scripts/spawn.sh pm "Build an invoicing SaaS. MVP only."
 #   ./scripts/spawn.sh dev1 "Implement the auth module. See brief." src/
 #   ./scripts/spawn.sh tagger-dev1 "Cross-project task" ~/Projects/tagger
+#   ./scripts/spawn.sh --runtime pi dev1 "Implement the auth module." src/
 
 set -euo pipefail
 
-TARGET="${1:?Usage: spawn.sh <agent_id_or_role> \"<context>\" [working_dir]}"
+# ── Parse --runtime flag (may appear anywhere); everything else stays positional ──
+RUNTIME_ARG=""
+POSITIONAL_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --runtime) RUNTIME_ARG="${2:?--runtime requires a value}"; shift 2 ;;
+    --runtime=*) RUNTIME_ARG="${1#--runtime=}"; shift ;;
+    *) POSITIONAL_ARGS+=("$1"); shift ;;
+  esac
+done
+set -- "${POSITIONAL_ARGS[@]+"${POSITIONAL_ARGS[@]}"}"
+
+TARGET="${1:?Usage: spawn.sh [--runtime <claude|pi>] <agent_id_or_role> \"<context>\" [working_dir]}"
 CONTEXT="${2:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
@@ -104,6 +117,33 @@ if [[ -n "$EFFECTIVE_MODEL" ]]; then
   MODEL_FLAG="--model $EFFECTIVE_MODEL"
   echo "  Model for $SHORT_ROLE: $EFFECTIVE_MODEL$([[ -n "${SPAWN_MODEL:-}" ]] && echo ' (SPAWN_MODEL override)')" >&2
 fi
+
+# Runtime selection. Precedence: --runtime arg / SPAWN_RUNTIME env (spawn-time,
+# always wins) > config.yaml agents.<agent_key>.runtime (per-agent default) >
+# config.yaml project runtime (project default) > "claude" (global default).
+# Mirrors the model-selection seam above; claude stays the default so this
+# feature is strictly opt-in.
+CONFIG_RUNTIME=""
+if [[ -n "$PROJECT_KEY" && -f "$KAREN_CONFIG_FILE" ]]; then
+  CONFIG_RUNTIME=$(python3 -c "
+import yaml, os
+config = yaml.safe_load(open(os.path.expanduser('$KAREN_CONFIG_FILE'))) or {}
+proj = (config.get('projects') or {}).get('$PROJECT_KEY') or {}
+agents = proj.get('agents') or {}
+agent_conf = agents.get('$SHORT_ROLE')
+agent_runtime = agent_conf.get('runtime') if isinstance(agent_conf, dict) else None
+print(agent_runtime or proj.get('runtime') or '', end='')
+" 2>/dev/null || true)
+fi
+EFFECTIVE_RUNTIME="${RUNTIME_ARG:-${SPAWN_RUNTIME:-${CONFIG_RUNTIME:-claude}}}"
+
+case "$EFFECTIVE_RUNTIME" in
+  claude|pi) ;;
+  *)
+    echo "ERROR: unknown runtime '$EFFECTIVE_RUNTIME' (supported: claude, pi)" >&2
+    exit 1
+    ;;
+esac
 
 # ── Check if agent is already alive — reuse instead of duplicate spawn ────────
 mkdir -p "$HUB_DIR/inbox" "$HUB_DIR/state" "$HUB_DIR/memory" "$HUB_DIR/context/$PROJECT_KEY"
@@ -228,6 +268,21 @@ echo "{\"from\":\"system\",\"type\":\"init\",\"ts\":\"$TIMESTAMP\",\"body\":$CON
   echo ""
 } >> "$COMMS"
 
+# Launch dispatch. claude path is byte-for-byte identical to before this
+# feature existed (same flags, same order); pi is strictly opt-in.
+# Pi runs interactively (prompt as a trailing positional arg, NO -p) so it
+# stays open in the tab and can be woken later via mux_send keystrokes —
+# same wake mechanism claude already relies on. `-p`/--print would exit
+# after one turn, breaking that (see docs/pi-runtime-support-design.md).
+if [[ "$EFFECTIVE_RUNTIME" == "pi" ]]; then
+  LAUNCH_LINE="pi --tools bash,read,write,edit"
+else
+  LAUNCH_LINE="claude"
+  [[ -n "${SPAWN_RC:-}" ]] && LAUNCH_LINE="$LAUNCH_LINE --remote-control $AGENT_ID"
+  LAUNCH_LINE="$LAUNCH_LINE --dangerously-skip-permissions"
+  [[ -n "$MODEL_FLAG" ]] && LAUNCH_LINE="$LAUNCH_LINE $MODEL_FLAG"
+fi
+
 # Bootstrap command for the new workspace
 BOOTSTRAP=$(cat <<EOF
 cd "$WORKDIR" && \
@@ -241,7 +296,7 @@ cd "$WORKDIR" && \
   if [[ ! -f CLAUDE.md ]] || ! grep -q '^# ROLE:' CLAUDE.md 2>/dev/null; then cp "$ROLE_FILE" CLAUDE.md; else echo '# Role file preserved (already exists with ROLE header)'; fi && \
   if [[ ! -d .beads ]]; then bd init 2>/dev/null || true; fi && \
   bd quickstart 2>/dev/null || true && \
-  claude ${SPAWN_RC:+--remote-control $AGENT_ID} --dangerously-skip-permissions $MODEL_FLAG "You have been activated as $AGENT_ID (role: $SHORT_ROLE, project: $PROJECT_KEY). Orient yourself in this order:
+  $LAUNCH_LINE "You have been activated as $AGENT_ID (role: $SHORT_ROLE, project: $PROJECT_KEY). Orient yourself in this order:
 1. Read CLAUDE.md for your role instructions.
 2. Read $HUB_DIR/memory/shared.md for cross-agent shared context.
 3. If $HUB_DIR/memory/${AGENT_ID}.md exists, read it for your memory from prior sessions.
