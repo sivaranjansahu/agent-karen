@@ -159,13 +159,22 @@ for PROJECT_KEY in "${PROJECT_KEYS[@]}"; do
 
   # Link knowledge dirs
   mkdir -p "$HUB_DIR/knowledge/$PROJECT_KEY"
-  for KDIR in "${!KNOWLEDGE_VAR}"; do
-    if [[ -d "$KDIR" ]]; then
-      LINK_NAME=$(basename "$KDIR")
-      ln -sfn "$KDIR" "$HUB_DIR/knowledge/$PROJECT_KEY/$LINK_NAME"
-      echo "  ✓ Knowledge linked: $LINK_NAME"
-    fi
-  done 2>/dev/null || true
+  # Guard before the indirect-array expansion below: on bash 3.2 (macOS
+  # default), "${!KNOWLEDGE_VAR}" on an EMPTY array throws "unbound variable"
+  # under set -u (unlike a direct "${arr[@]}", which bash exempts from
+  # nounset) — a project with no `knowledge:` key would abort the whole
+  # script before ever reaching the loop body.
+  KNOWLEDGE_COUNT=0
+  eval "KNOWLEDGE_COUNT=\${#PROJECT_${PROJECT_KEY}_KNOWLEDGE[@]}"
+  if [[ "$KNOWLEDGE_COUNT" -gt 0 ]]; then
+    for KDIR in "${!KNOWLEDGE_VAR}"; do
+      if [[ -d "$KDIR" ]]; then
+        LINK_NAME=$(basename "$KDIR")
+        ln -sfn "$KDIR" "$HUB_DIR/knowledge/$PROJECT_KEY/$LINK_NAME"
+        echo "  ✓ Knowledge linked: $LINK_NAME"
+      fi
+    done 2>/dev/null || true
+  fi
 
   # Set up .claude/settings.json in project dir
   CLAUDE_DIR="$PROJECT_DIR/.claude"
@@ -240,31 +249,38 @@ with open('$SETTINGS_FILE', 'w') as f:
   fi
 
   # ── Spawn autostart agents ───────────────────────────────────────────────
-  for AGENT_KEY in "${!AGENTS_VAR}"; do
-    ROLE_VAR="AGENT_${PROJECT_KEY}_${AGENT_KEY}_ROLE"
-    AUTOSTART_VAR="AGENT_${PROJECT_KEY}_${AGENT_KEY}_AUTOSTART"
-    ROLE="${!ROLE_VAR}"
-    AUTOSTART="${!AUTOSTART_VAR}"
+  # Same bash-3.2 indirect-empty-array guard as the knowledge loop above — a
+  # project with no `agents:` key (PROJECT_<key>_AGENTS is an empty array)
+  # would otherwise hit the identical "unbound variable" abort.
+  AGENTS_COUNT=0
+  eval "AGENTS_COUNT=\${#PROJECT_${PROJECT_KEY}_AGENTS[@]}"
+  if [[ "$AGENTS_COUNT" -gt 0 ]]; then
+    for AGENT_KEY in "${!AGENTS_VAR}"; do
+      ROLE_VAR="AGENT_${PROJECT_KEY}_${AGENT_KEY}_ROLE"
+      AUTOSTART_VAR="AGENT_${PROJECT_KEY}_${AGENT_KEY}_AUTOSTART"
+      ROLE="${!ROLE_VAR}"
+      AUTOSTART="${!AUTOSTART_VAR}"
 
-    AGENT_ID="${PROJECT_KEY}-${AGENT_KEY}"
+      AGENT_ID="${PROJECT_KEY}-${AGENT_KEY}"
 
-    if [[ "$AUTOSTART" != "true" ]]; then
-      echo "  · $AGENT_ID ($ROLE) — not autostart, skipping"
-      continue
-    fi
+      if [[ "$AUTOSTART" != "true" ]]; then
+        echo "  · $AGENT_ID ($ROLE) — not autostart, skipping"
+        continue
+      fi
 
-    # Export env vars for spawn.sh
-    export KAREN_HUB_DIR="$HUB_DIR"
-    export KAREN_PROJECT_KEY="$PROJECT_KEY"
-    export KAREN_PROJECT_DIR="$PROJECT_DIR"
-    export KAREN_AGENT_ID="$AGENT_ID"
-    export AGENT_ROLE="$ROLE"
+      # Export env vars for spawn.sh
+      export KAREN_HUB_DIR="$HUB_DIR"
+      export KAREN_PROJECT_KEY="$PROJECT_KEY"
+      export KAREN_PROJECT_DIR="$PROJECT_DIR"
+      export KAREN_AGENT_ID="$AGENT_ID"
+      export AGENT_ROLE="$ROLE"
 
-    echo "  ▸ Starting $AGENT_ID ($ROLE)..."
-    "$SCAFFOLD_DIR/scripts/spawn.sh" "$AGENT_ID" "You are $AGENT_ID. Project: $PROJECT_KEY. Working dir: $PROJECT_DIR. Read your inbox and CLAUDE.md, then begin." "$PROJECT_DIR" 2>&1 | sed 's/^/    /'
+      echo "  ▸ Starting $AGENT_ID ($ROLE)..."
+      "$SCAFFOLD_DIR/scripts/spawn.sh" "$AGENT_ID" "You are $AGENT_ID. Project: $PROJECT_KEY. Working dir: $PROJECT_DIR. Read your inbox and CLAUDE.md, then begin." "$PROJECT_DIR" 2>&1 | sed 's/^/    /'
 
-    SPAWNED=$((SPAWNED + 1))
-  done 2>/dev/null || true
+      SPAWNED=$((SPAWNED + 1))
+    done 2>/dev/null || true
+  fi
 done
 
 # ── Start heartbeat daemon ────────────────────────────────────────────────────

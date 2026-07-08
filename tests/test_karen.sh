@@ -1747,6 +1747,58 @@ YAML
   assert_contains "up.sh resolves nearest workspace config's hub" "$output" "$ws_dir/.karen/hub"
 }
 
+# Fire-drill blocker: fleet is the first real workspace whose project has NO
+# `knowledge:` key (knowledge defaults to an empty list). up.sh's
+# `for KDIR in "${!KNOWLEDGE_VAR}"` indirect-expands that empty array — under
+# bash 3.2 (macOS default) + `set -u`, indirect expansion of an empty array
+# throws "unbound variable" (unlike a direct "${arr[@]}" expansion, which bash
+# specifically exempts from nounset), aborting `karen up` before any agent
+# spawns. Repro: `bash -c 'set -u; arr=(); v="arr[@]"; for x in "${!v}"; do :;
+# done'` -> unbound.
+test_up_project_with_no_knowledge_key_does_not_crash() {
+  local ws_dir="$TEST_TMPDIR/upnoknowledge"
+  local proj_dir="$ws_dir/proj"
+  mkdir -p "$ws_dir/.karen" "$proj_dir"
+  cat > "$ws_dir/.karen/config.yaml" << YAML
+hub: $ws_dir/.karen/hub
+projects:
+  demo:
+    dir: $proj_dir
+    agents:
+      manager: { role: manager, autostart: true }
+YAML
+
+  local output rc=0
+  output=$(cd "$ws_dir" && unset KAREN_CONFIG KAREN_HUB_DIR && "$SCAFFOLD_ROOT/scripts/up.sh" 2>&1) || rc=$?
+
+  assert_eq "up.sh exits 0 for a project with no knowledge key" "0" "$rc"
+  assert_contains "up.sh still reaches the project section" "$output" "Project: demo"
+  assert_contains "up.sh does not choke before spawning" "$output" "demo-manager"
+}
+
+# Same indirect-expansion shape at the AGENTS_VAR loop (up.sh:~243) — a
+# project with no `agents:` key at all (agents defaults to {}, so
+# PROJECT_<key>_AGENTS is an empty array) hits the identical bash-3.2 bug one
+# loop later. Not yet observed in the wild (fleet's config always declares an
+# agent), but same latent pattern — covered so it can't reappear unnoticed.
+test_up_project_with_no_agents_key_does_not_crash() {
+  local ws_dir="$TEST_TMPDIR/upnoagents"
+  local proj_dir="$ws_dir/proj"
+  mkdir -p "$ws_dir/.karen" "$proj_dir"
+  cat > "$ws_dir/.karen/config.yaml" << YAML
+hub: $ws_dir/.karen/hub
+projects:
+  demo:
+    dir: $proj_dir
+YAML
+
+  local output rc=0
+  output=$(cd "$ws_dir" && unset KAREN_CONFIG KAREN_HUB_DIR && "$SCAFFOLD_ROOT/scripts/up.sh" 2>&1) || rc=$?
+
+  assert_eq "up.sh exits 0 for a project with no agents key" "0" "$rc"
+  assert_contains "up.sh still reaches the project section" "$output" "Project: demo"
+}
+
 # ═══════════════════════════════════════════════════════════════════════
 # Suite 18: heartbeat daemon — singleton, verify-before-escalate, dedupe,
 #           status/stop subcommands (P1 fix for the 102-daemon leak)
@@ -2726,6 +2778,8 @@ main() {
   echo "── Suite 17: workspace wiring — config.sh / up.sh ──"
   run_test test_config_show_uses_nearest_workspace_config
   run_test test_up_uses_nearest_workspace_config
+  run_test test_up_project_with_no_knowledge_key_does_not_crash
+  run_test test_up_project_with_no_agents_key_does_not_crash
   echo ""
 
   echo "── Suite 18: heartbeat daemon (singleton / verify / dedupe / status-stop) ──"
