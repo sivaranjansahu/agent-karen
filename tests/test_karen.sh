@@ -1699,6 +1699,15 @@ test_hub_fleet_shaped_workspace_resolves_from_registry_and_incidents_dirs() {
   assert_eq "resolves fleet's own hub from incidents/queue/" "$TEST_TMPDIR/fleetws/.karen" "$result_from_queue"
 }
 
+test_fleet_spec_doc_reflects_code_instance_split() {
+  local spec="$SCAFFOLD_ROOT/docs/superpowers/specs/2026-07-07-fleet-monitoring-design.md"
+  local content=""
+  [[ -f "$spec" ]] && content=$(cat "$spec")
+  assert_contains "spec no longer specs registry inside the scaffold" "$content" "fleet-workspace"
+  assert_contains "spec documents the instance repo path" "$content" "/Users/jarvis/projects/fleet/"
+  assert_contains "spec explicitly calls out the amendment" "$content" "Amendment"
+}
+
 # ═══════════════════════════════════════════════════════════════════════
 # SUITE 17: workspace wiring — config.sh / up.sh
 # ═══════════════════════════════════════════════════════════════════════
@@ -2711,6 +2720,7 @@ main() {
   run_test test_hub_resolve_hub_dir_central_hub_regression
   run_test test_hub_two_sibling_workspaces_resolve_independently
   run_test test_hub_fleet_shaped_workspace_resolves_from_registry_and_incidents_dirs
+  run_test test_fleet_spec_doc_reflects_code_instance_split
   echo ""
 
   echo "── Suite 17: workspace wiring — config.sh / up.sh ──"

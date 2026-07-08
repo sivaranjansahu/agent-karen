@@ -20,7 +20,25 @@ Each layer changes without touching the others: swap polling for webhooks later,
 
 ## Site registry — the modularity contract
 
-`$AGENT_SCAFFOLD_ROOT/fleet/registry/<site>.yaml`, one manifest per property. Adding a site to the fleet = one manifest (+ optional Sentry wiring for depth).
+**Amendment (2026-07-08, binding, from the human):** the fleet runs as a karen
+**workspace** — the first production use of the workspace feature (self-contained
+`.karen/config.yaml`, own hub). This splits CODE from INSTANCE:
+
+- **Code (reusable, ships in agent-karen/agent-scaffold):** the poller
+  (`scripts/fleet-poller.sh`, plain bash, no LLM), the detection functions it
+  drives (`lib/fleet.sh`), the `fleet-manager` role template
+  (`roles/fleet-manager.md`), and the launchd plist template
+  (`scripts/com.karen.fleet-poller.plist`, provided — not installed by the
+  scaffold, the operator installs it once).
+- **Instance (deployment state, its own git repo, NOT the scaffold repo):**
+  `/Users/jarvis/projects/fleet/` — `.karen/config.yaml`,
+  `registry/<site>.yaml` manifests, `incidents/{queue/,log.jsonl}`.
+
+So the registry path below is now **`<fleet-workspace>/registry/<site>.yaml`**
+(e.g. `/Users/jarvis/projects/fleet/registry/fdecareers.yaml`), not
+`$AGENT_SCAFFOLD_ROOT/fleet/registry/` as originally specced here — one manifest
+per property, adding a site to the fleet is still just one manifest file
+(+ optional Sentry wiring for depth).
 
 ```yaml
 name: fdecareers
@@ -48,7 +66,7 @@ autonomy:
 
 ```
 Sentry alert / failed health probe / missed cron heartbeat
-  → poller writes incident JSON to fleet/incidents/queue/, wakes fleet manager
+  → poller writes incident JSON to <fleet-workspace>/incidents/queue/, wakes fleet manager
   → fleet manager: dedupe (one open incident per site+signal), enrich
     (Cloudflare logs via wrangler/API, Sentry issue details, recent deploys/commits),
     create bead, look up registry
@@ -57,7 +75,7 @@ Sentry alert / failed health probe / missed cron heartbeat
   → fleet manager verifies INDEPENDENTLY (health probe green, Sentry issue
     resolved, error rate at baseline) before closing the bead —
     never trusts a "fixed" claim
-  → outcome appended to fleet/incidents/log.jsonl (the fleet's run-log)
+  → outcome appended to <fleet-workspace>/incidents/log.jsonl (the fleet's run-log)
 ```
 
 ## Autonomy tiers
@@ -82,9 +100,18 @@ The historically observed failure mode is the machinery dying silently, not the 
 
 ## Rollout
 
-1. Build `fleet/` module (registry, poller, fleet-manager role template, incident queue/log) in agent-karen; register **fdecareers**; instrument it fully (SDK on board + fit-worker, migrate `HEALTHCHECK_URL_*` pings to Sentry Crons check-ins).
-2. **Fire-drill:** deliberately break non-critical things (kill a cron, deploy a 500 page) and watch the loop run detect → route → spawn → fix → verify end-to-end.
-3. Onboard **northfacinghomes** when it has a deployed property — the modularity test: one manifest, zero framework changes.
+1. **Phase 1 (done):** build the CODE (poller, `lib/fleet.sh` detection functions,
+   fleet-manager role template, launchd plist template) in agent-karen/agent-scaffold;
+   create the INSTANCE (`/Users/jarvis/projects/fleet/`, its own git repo) with
+   `fdecareers` registered (full manifest) and `vebinar` registered (minimal,
+   sentry-only — no confirmed production URL in-repo yet). Sentry SDK instrumentation
+   for fdecareers itself, and migrating its `HEALTHCHECK_URL_*` pings to Sentry Crons
+   check-ins, are separate later work packages, not part of this phase.
+2. **Fire-drill (phase 2, run WITH the human watching):** deliberately break
+   non-critical things (kill a cron, deploy a 500 page) and watch the loop run detect
+   → route → spawn → fix → verify end-to-end.
+3. Onboard **northfacinghomes** when it has a deployed property — the modularity test:
+   one manifest, zero framework changes.
 
 ## Out of scope (deliberate)
 
