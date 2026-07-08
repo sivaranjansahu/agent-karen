@@ -2334,6 +2334,128 @@ test_fleet_write_incident_does_not_dedupe_different_signal() {
   assert_eq "different signal is not deduped" "2" "$count"
 }
 
+# ── fleet-poller.sh — integration tests (drives lib/fleet.sh end to end) ──────
+
+_setup_fleet_workspace() {
+  # Minimal self-contained fleet workspace: its own hub via .karen/config.yaml,
+  # one registry manifest, and an empty incidents queue.
+  mkdir -p "$TEST_TMPDIR/fleet/.karen" "$TEST_TMPDIR/fleet/registry" "$TEST_TMPDIR/fleet/incidents/queue"
+  echo "projects: {}" > "$TEST_TMPDIR/fleet/.karen/config.yaml"
+}
+
+test_fleet_poller_writes_incident_on_health_failure() {
+  _setup_fleet_workspace
+  cat > "$TEST_TMPDIR/fleet/registry/site.yaml" << 'YAML'
+name: testsite
+health_url: https://example.com/
+YAML
+  _setup_fleet_mocks 503
+
+  local rc=0
+  (unset KAREN_HUB_DIR KAREN_CONFIG KAREN_PROJECT_AGENT_DIR
+   FLEET_ENV_FILE="$TEST_TMPDIR/no-such-fleet.env" "$SCAFFOLD_ROOT/scripts/fleet-poller.sh" "$TEST_TMPDIR/fleet" >/dev/null 2>&1) || rc=$?
+  assert_eq "poller run succeeds even when a site is down" "0" "$rc"
+
+  local incident_count
+  incident_count=$(ls "$TEST_TMPDIR/fleet/incidents/queue" 2>/dev/null | wc -l | tr -d ' ')
+  assert_eq "one incident written for the failing health check" "1" "$incident_count"
+
+  local content
+  content=$(cat "$TEST_TMPDIR/fleet/incidents/queue"/*.json)
+  assert_contains "incident names the site" "$content" "testsite"
+  assert_contains "incident names the signal" "$content" "health_probe_failed"
+}
+
+test_fleet_poller_no_incident_when_healthy() {
+  _setup_fleet_workspace
+  cat > "$TEST_TMPDIR/fleet/registry/site.yaml" << 'YAML'
+name: testsite
+health_url: https://example.com/
+YAML
+  _setup_fleet_mocks 200
+
+  (unset KAREN_HUB_DIR KAREN_CONFIG KAREN_PROJECT_AGENT_DIR
+   FLEET_ENV_FILE="$TEST_TMPDIR/no-such-fleet.env" "$SCAFFOLD_ROOT/scripts/fleet-poller.sh" "$TEST_TMPDIR/fleet" >/dev/null 2>&1) || true
+
+  local incident_count
+  incident_count=$(ls "$TEST_TMPDIR/fleet/incidents/queue" 2>/dev/null | wc -l | tr -d ' ')
+  assert_eq "no incident for a healthy site" "0" "$incident_count"
+}
+
+test_fleet_poller_degrades_gracefully_without_fleet_env() {
+  # fdecareers-shaped manifest: sentry_project none-yet, but health_url and
+  # repo ARE configured — those checks must still run (per-signal
+  # independence), only the Sentry-dependent ones skip.
+  _setup_fleet_workspace
+  mkdir -p "$TEST_TMPDIR/fleet/repo"
+  cat > "$TEST_TMPDIR/fleet/registry/site.yaml" << YAML
+name: testsite
+health_url: https://example.com/
+repo: $TEST_TMPDIR/fleet/repo
+sentry_project: none-yet
+YAML
+  _setup_fleet_mocks 503 "[]" '[{"conclusion":"success","status":"completed","name":"CI","createdAt":"2026-07-08T00:00:00Z"}]'
+
+  local rc=0
+  (unset KAREN_HUB_DIR KAREN_CONFIG KAREN_PROJECT_AGENT_DIR
+   FLEET_ENV_FILE="$TEST_TMPDIR/no-such-fleet.env" "$SCAFFOLD_ROOT/scripts/fleet-poller.sh" "$TEST_TMPDIR/fleet" >/dev/null 2>&1) || rc=$?
+  assert_eq "poller succeeds with no fleet.env at all" "0" "$rc"
+
+  local incident_count
+  incident_count=$(ls "$TEST_TMPDIR/fleet/incidents/queue" 2>/dev/null | wc -l | tr -d ' ')
+  assert_eq "health check still signals without Sentry creds" "1" "$incident_count"
+}
+
+test_fleet_poller_wakes_fleet_manager_via_msg() {
+  _setup_fleet_workspace
+  cat > "$TEST_TMPDIR/fleet/registry/site.yaml" << 'YAML'
+name: testsite
+health_url: https://example.com/
+YAML
+  _setup_fleet_mocks 503
+
+  (unset KAREN_HUB_DIR KAREN_CONFIG KAREN_PROJECT_AGENT_DIR
+   FLEET_ENV_FILE="$TEST_TMPDIR/no-such-fleet.env" "$SCAFFOLD_ROOT/scripts/fleet-poller.sh" "$TEST_TMPDIR/fleet" >/dev/null 2>&1) || true
+
+  local inbox_content=""
+  [[ -f "$TEST_TMPDIR/fleet/.karen/inbox/fleet-manager.jsonl" ]] && \
+    inbox_content=$(cat "$TEST_TMPDIR/fleet/.karen/inbox/fleet-manager.jsonl")
+  assert_contains "fleet manager gets queued a wake message" "$inbox_content" "signal"
+}
+
+test_fleet_poller_never_spawns() {
+  # Structural guard: the poller must never invoke spawn.sh — incidents only
+  # ever get routed via msg.sh, which queues silently if nobody's alive.
+  local hits
+  hits=$(grep -c "spawn\.sh" "$SCAFFOLD_ROOT/scripts/fleet-poller.sh" || true)
+  assert_eq "poller source never references spawn.sh" "0" "$hits"
+}
+
+test_fleet_poller_heartbeat_checkin_when_configured() {
+  _setup_fleet_workspace
+  # No registry manifests at all — this test is purely about the heartbeat
+  # check-in call, independent of any site detection.
+  _setup_fleet_mocks 200
+
+  cat > "$MOCK_BIN/curl" << 'MOCK'
+#!/usr/bin/env bash
+echo "CURL_ARGS: $@" >> /tmp/karen-test-fleet-heartbeat.log
+if [[ "$*" == *"%{http_code}"* ]]; then
+  echo "200"
+fi
+MOCK
+  chmod +x "$MOCK_BIN/curl"
+  rm -f /tmp/karen-test-fleet-heartbeat.log
+
+  FLEET_ENV_FILE="$TEST_TMPDIR/no-such-fleet.env" FLEET_POLLER_HEARTBEAT_URL="https://hc-ping.test/abc123" \
+    "$SCAFFOLD_ROOT/scripts/fleet-poller.sh" "$TEST_TMPDIR/fleet" >/dev/null 2>&1 || true
+
+  local log=""
+  [[ -f /tmp/karen-test-fleet-heartbeat.log ]] && log=$(cat /tmp/karen-test-fleet-heartbeat.log)
+  rm -f /tmp/karen-test-fleet-heartbeat.log
+  assert_contains "poller checks in to its own heartbeat URL" "$log" "hc-ping.test/abc123"
+}
+
 # ═══════════════════════════════════════════════════════════════════════
 # TEST RUNNER
 # ═══════════════════════════════════════════════════════════════════════
@@ -2534,6 +2656,12 @@ main() {
   run_test test_fleet_write_incident_creates_json
   run_test test_fleet_write_incident_dedupes_same_site_signal
   run_test test_fleet_write_incident_does_not_dedupe_different_signal
+  run_test test_fleet_poller_writes_incident_on_health_failure
+  run_test test_fleet_poller_no_incident_when_healthy
+  run_test test_fleet_poller_degrades_gracefully_without_fleet_env
+  run_test test_fleet_poller_wakes_fleet_manager_via_msg
+  run_test test_fleet_poller_never_spawns
+  run_test test_fleet_poller_heartbeat_checkin_when_configured
   echo ""
 
   # ── Summary ──
