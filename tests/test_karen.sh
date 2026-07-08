@@ -2456,6 +2456,27 @@ MOCK
   assert_contains "poller checks in to its own heartbeat URL" "$log" "hc-ping.test/abc123"
 }
 
+# ── roles/fleet-manager.md — lint (content, not behavior: this is a prompt
+# file for an LLM agent, not executable code) ─────────────────────────────
+
+test_fleet_manager_role_file_exists() {
+  assert_file_exists "fleet-manager role file exists" "$SCAFFOLD_ROOT/roles/fleet-manager.md"
+}
+
+test_fleet_manager_role_covers_required_sections() {
+  local content=""
+  [[ -f "$SCAFFOLD_ROOT/roles/fleet-manager.md" ]] && content=$(cat "$SCAFFOLD_ROOT/roles/fleet-manager.md")
+  assert_contains "mentions incidents queue" "$content" "incidents/queue"
+  assert_contains "documents dedupe" "$content" "dedupe"
+  assert_contains "documents routing per manifest manager field" "$content" "manager:"
+  assert_contains "documents spawn-if-absent verification" "$content" "health.sh"
+  assert_contains "documents independent resolution verification" "$content" "verif"
+  assert_contains "documents Tier 0" "$content" "Tier 0"
+  assert_contains "documents Tier 1" "$content" "Tier 1"
+  assert_contains "documents Tier 2" "$content" "Tier 2"
+  assert_contains "never-pretend framing on spawn failure" "$content" "ever pretend"
+}
+
 # ═══════════════════════════════════════════════════════════════════════
 # TEST RUNNER
 # ═══════════════════════════════════════════════════════════════════════
@@ -2662,6 +2683,8 @@ main() {
   run_test test_fleet_poller_wakes_fleet_manager_via_msg
   run_test test_fleet_poller_never_spawns
   run_test test_fleet_poller_heartbeat_checkin_when_configured
+  run_test test_fleet_manager_role_file_exists
+  run_test test_fleet_manager_role_covers_required_sections
   echo ""
 
   # ── Summary ──
