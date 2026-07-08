@@ -23,11 +23,11 @@ fixed as part of this recovery.
 | 5 | `scripts/add-project.sh`: flexible `<name> <path>` / `<path>` / reversed-arg tolerance | **SUPERSEDED** | File never existed in this repo's history. Superseded by `scripts/add.sh` (flag-based: `--name`/`--knowledge`/positional path), which already existed as WIP-uncommitted work. The two-positional reversed-arg UX doesn't apply to a flag-based interface — rejected as moot, not a regression. |
 | 5a | `add.sh`: `~` expansion for input path | **BUG FOUND + BUILT** | `cd "$PROJECT_DIR"` doesn't tilde-expand an already-quoted variable, so `karen add ~/foo` would fail with `cd: no such file`. Fixed for both the positional path arg and `--knowledge`. |
 | 5b | `add-project.sh`/`spawn.sh`: per-project beads dir + `BEADS_ROOT` export + defensive `bd quickstart` | **BUILT** | Considered a hub-side `$HUB_DIR/beads/$PROJECT_KEY` per the summary's literal text, but rejected it after tracing that `bootstrap.sh`/`init.sh` already use project-local `.beads/` — a separate hub-side store would fragment the task DB between the manager and the agents it spawns. Instead: `BEADS_ROOT` is exported as `$WORKDIR` (the shared project dir) in both `spawn.sh`'s bootstrap and `bootstrap.sh` itself, plus opportunistic `bd init` + defensive `bd quickstart` in both. Test: `test_spawn_bootstrap_includes_env_vars` extended with a `BEADS_ROOT` assertion. |
-| 6 | `scripts/config-add-knowledge.sh` (new command + hot-reload symlink + 3-tier config precedence) | **SUPERSEDED** | Never existed in this repo. Knowledge-dir management already exists via `add.sh --knowledge` + `up.sh`'s per-project symlinking into `$HUB_DIR/knowledge/$PROJECT_KEY/` — a separate `config-add-knowledge` command doesn't fit the declarative-YAML model. The described 3-tier precedence (`KAREN_CONFIG` > *resolved hub* `config.yaml` > `~/.karen/config.yaml`) is hub-first; the current architecture is config-first (config.yaml is the source of truth that *declares* the hub path) — inverting that would conflict with how `add.sh`/`up.sh`/`config.sh` already work. Rejected, not a regression. |
-| 7 | `scripts/init-project.sh` (`KAREN_CONFIG` + `resolve_hub_dir` support) | **SUPERSEDED** | Never existed. `init.sh` intentionally keeps state at `$PROJECT_DIR/.agent` (project-local), independent of the central-hub `resolve_hub_dir()` mechanism used by spawn/msg/health/etc. This is a deliberate architectural split (standalone-project mode vs. central-hub multi-project mode, see `bootstrap.sh` using `KAREN_HUB_DIR="$WORKDIR/.agent"`), confirmed still working (all `init` suite tests pass). No rebuild needed. |
-| 8 | `scripts/up.sh`: upward search for nearest `.karen/config.yaml` + hub-default-to-config-dir fallback | **SUPERSEDED** | Current architecture uses one global `~/.karen/config.yaml` (or `$KAREN_CONFIG` override) as the single source of truth, referenced consistently by `add.sh`/`up.sh`/`config.sh`/`bootstrap.sh`. Introducing a per-directory upward config search would add a second, competing config-discovery mechanism with no current caller needing it — rejected as scope creep without a demonstrated need. Can revisit if a real multi-config-file use case shows up. |
+| 6 | `scripts/config-add-knowledge.sh` (new command + hot-reload symlink + 3-tier config precedence) | **BUILT** (precedence only) *(re-marked 2026-07-08 — human overruled the SUPERSEDED verdict below; see addendum)* | The 3-tier config precedence is now real: `resolve_karen_config()` in `lib/hub.sh` implements `$KAREN_CONFIG` > nearest workspace `.karen/config.yaml` (upward search) > global `~/.karen/config.yaml`, wired into `config.sh`/`up.sh`/`spawn.sh`. A dedicated `config-add-knowledge` command and hot-reload symlink were still not built — knowledge-dir management remains via `add.sh --knowledge` + `up.sh`'s symlinking, which doesn't need a hot-reload mechanism since it re-links on every `karen up`. |
+| 7 | `scripts/init-project.sh` (`KAREN_CONFIG` + `resolve_hub_dir` support) | **BUILT** (via the new workspace ladder, not `init.sh` itself) *(re-marked 2026-07-08)* | `init.sh` itself is untouched — its project-local `$PROJECT_DIR/.agent` model still stands, and forcing `resolve_hub_dir()` into it isn't required for functional parity. Instead, a directory tree gets the equivalent project-scoped, no-hand-wiring config/hub resolution the summary wanted by dropping a `.karen/config.yaml` at its root: `resolve_hub_dir()` picks it up via the new workspace tier (below explicit `KAREN_HUB_DIR`/`KAREN_PROJECT_AGENT_DIR`, above standalone `.agent` search) and derives the hub from the config's `hub:` key or its own directory if absent. |
+| 8 | `scripts/up.sh`: upward search for nearest `.karen/config.yaml` + hub-default-to-config-dir fallback | **BUILT** *(re-marked 2026-07-08)* | `up.sh` now resolves its config via `resolve_karen_config()` (an explicit `--config` flag still overrides, unchanged) and defaults the hub to that config's own directory when it declares no `hub:` key — exactly the described behavior, plus the same ladder now shared with `config.sh`/`spawn.sh`/`where.sh` instead of being `up.sh`-only. |
 | 9 | `scripts/status.sh`: migrate to resolved hub dir + workspace-not-found error | **BUG FOUND + BUILT** | Was still hardcoded to `$ROOT/.agent/...` — under the central-hub model this is simply the wrong path for any project using a hub other than `$SCAFFOLD_ROOT/.agent` (i.e., almost always). Rewrote to `source lib/hub.sh` + `resolve_hub_dir()`, added `set -euo pipefail` and hard-exit when no hub resolves. Tests: `test_status_uses_resolved_hub_dir`, `test_status_fails_without_hub`. |
-| 10 | `tests/test_karen.sh`: `.agent` → `.karen` path convention rename | **SUPERSEDED** | `.karen` naming was never adopted anywhere in the real code (confirmed: zero hits repo-wide) — it's `.agent` throughout, including in code written well after the June staged diff. Rewriting the test suite to `.karen` would make it diverge from actual runtime behavior. Rejected — moot, the summary's premise (that a rename to `.karen` happened) didn't occur. |
+| 10 | `tests/test_karen.sh`: `.agent` → `.karen` path convention rename | **BUILT** (as an added workspace layer, not a rename) *(re-marked 2026-07-08)* | `.karen` naming didn't replace `.agent` — it's now the workspace-mode convention layered above it: a `.karen/config.yaml` at a directory tree's root makes it self-contained (own hub under `.karen/` by default), while `.agent`-based standalone projects and the existing central-hub model keep working unchanged. 15 new tests cover the ladder, `where.sh` reporting, `up.sh`/`config.sh` wiring, and a live two-sibling-workspace demo (below) — this is the "test realignment" the summary wanted, achieved without actually renaming the legacy convention (which would have been a regression for existing standalone users). |
 | 10a | `tests/test_karen.sh`: agent-ID inbox naming (vs. `test-<role>.jsonl`) | **HEAD** (already correct) | Runtime already uses full project-prefixed agent IDs (`test-pm.jsonl` = `test` project + `pm` role, via `KAREN_PROJECT_KEY=test` in test setup) — this *is* the agent-ID convention, just with a `test` project prefix from the test harness itself. Nothing to change. |
 | 10b | `tests/test_karen.sh`: pre-existing failures | **BUG FOUND + FIXED** | Before any of the above, the suite was at 111/147 passing. Root cause: WIP's model-selection feature in `spawn.sh` (`ROLE_MODEL=$(grep ... | head -1 | sed ...)`) had no `|| true` — under `set -euo pipefail`, `grep` returning no match (the common case: most roles have no `<!-- model: ... -->` directive) failed the whole pipeline and killed `spawn.sh` immediately, silently, for almost every spawn. This alone caused ~32 of the 36 failures across the spawn/reuse/symlink suites. Fixed with `|| true`. The remaining 4 failures were a stale, non-stateful mock `cmux` (didn't reflect `rename-workspace` in subsequent `list-workspaces` output, so WIP's stricter alive-check could never match) — made the mock stateful (tracks the renamed display name, clears it on `close-workspace`). Suite is now 163/163 (147 original + 16 new, see below). |
 | 10c | `tests/test_karen.sh`: config-mapped project spawn test | **BUILT** | `test_spawn_workdir_from_config` — proves a project-prefixed spawn with no explicit workdir resolves from `config.yaml`, outranking `$KAREN_PROJECT_DIR`. |
@@ -61,7 +61,7 @@ All original uncommitted WIP was committed verbatim to branch `wip-backup-2026-0
 tree unstaged — so this recovery is strictly additive on top of that snapshot; nothing
 from the original working tree was lost.
 
-## Validation
+## Validation (2026-07-07 recovery)
 
 - `bash tests/test_karen.sh` — 163/163 passing (was 111/147 before this recovery; two
   real bugs found and fixed, see item 10b).
@@ -69,3 +69,37 @@ from the original working tree was lost.
 - `./bin/cli.sh where` (and `karen paths` alias) — smoke-tested against a live hub.
 - `./scripts/status.sh` — smoke-tested against a live hub, correctly resolves a non-default
   `$KAREN_HUB_DIR`.
+
+## Addendum (2026-07-08): workspace support overrule
+
+The human overruled the SUPERSEDED verdicts on items 6/7/8/10 above — workspace support
+(a self-contained `.karen/config.yaml` per directory tree, upward-searched, nearest
+wins) became the primary product goal, on top of this recovery. Implemented in
+`lib/hub.sh` (`resolve_karen_config()` + a new tier in `resolve_hub_dir()`), wired into
+`spawn.sh`/`config.sh`/`up.sh`/`where.sh`, with the central-hub and standalone-`.agent`
+tiers preserved exactly (explicit `KAREN_HUB_DIR`/`KAREN_PROJECT_AGENT_DIR` always win;
+the fdecareers hub the manager monitors through never touches the new tier at all).
+`add.sh`/`init.sh` were deliberately left unwired — see items 5/7 above for why.
+
+Two real bugs surfaced during this work, beyond the four gap-matrix items:
+- An infinite loop in the upward-search pattern (both the new one and the pre-existing
+  standalone-`.agent` one it's modeled on) when the process's cwd is stale/deleted —
+  `pwd` fails, and `dirname("")`/`dirname(".")` never reach `/`. Root-caused to the test
+  harness's own `teardown()` deleting `TEST_TMPDIR` without `cd`-ing away first.
+- `where.sh`'s "workspace root" reported `.karen/` itself instead of the workspace's
+  actual top directory; and since `$HOME` is always an ancestor, plain global-config
+  usage (no workspace opted into) was mislabeled as a discovered workspace instead of
+  the global fallback. Both fixed with tests before shipping.
+
+### Validation (2026-07-08 workspace work)
+
+- `bash tests/test_karen.sh` — 187/187 passing (24 new tests: the resolution ladder,
+  `spawn.sh`/`config.sh`/`up.sh` wiring, `where.sh` reporting, the `$HOME`-boundary
+  precision fix, and CLI help positioning).
+- `bash -n` over every `*.sh` file in the repo — clean.
+- Live two-sibling-workspace demo under `~/Documents/temp/karen-workspace-demo/`:
+  `workspace-alpha` (self-contained, no `hub:` key) and `workspace-beta` (explicit
+  `hub:` key) each resolve correctly and independently from nested subdirectories.
+- fdecareers-hub regression re-verified unchanged after **every** commit in this stage
+  (not just at the end, per the manager's explicit ask): `KAREN_HUB_DIR=.../fdecareers/.agent`
+  against `status.sh`, `health.sh`, and a `msg.sh` round-trip.
