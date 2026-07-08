@@ -268,18 +268,20 @@ with open('$SETTINGS_FILE', 'w') as f:
 done
 
 # ── Start heartbeat daemon ────────────────────────────────────────────────────
-# Kill any existing heartbeat
-HEARTBEAT_PID_FILE="$HUB_DIR/state/heartbeat.pid"
-if [[ -f "$HEARTBEAT_PID_FILE" ]]; then
-  OLD_PID=$(cat "$HEARTBEAT_PID_FILE")
-  kill "$OLD_PID" 2>/dev/null || true
-fi
-
+# Restart cleanly: stop any existing daemon, then launch a fresh one. The daemon
+# owns its own pidfile (per-hub singleton) — do NOT write the pidfile here, or a
+# refused duplicate launch could clobber the live daemon's pid and defeat the
+# singleton guard (the root cause of the 102-daemon leak).
 export KAREN_HUB_DIR="$HUB_DIR"
-nohup "$SCAFFOLD_DIR/scripts/heartbeat.sh" loop 15 >> "$HUB_DIR/state/heartbeat.log" 2>&1 &
-echo "$!" > "$HEARTBEAT_PID_FILE"
-echo ""
-echo "✓ Heartbeat started (PID $!, every 15s)"
+if [[ "${KAREN_HEARTBEAT:-on}" == "off" ]]; then
+  echo ""
+  echo "⚠ Heartbeat disabled (KAREN_HEARTBEAT=off)"
+else
+  "$SCAFFOLD_DIR/scripts/heartbeat.sh" stop >/dev/null 2>&1 || true
+  nohup "$SCAFFOLD_DIR/scripts/heartbeat.sh" loop 15 >> "$HUB_DIR/state/heartbeat.log" 2>&1 &
+  echo ""
+  echo "✓ Heartbeat started (every 15s)"
+fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

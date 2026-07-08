@@ -185,18 +185,17 @@ cp "$SCRIPT_DIR/roles/manager.md" "$WORKDIR/CLAUDE.md"
 echo "✓ CLAUDE.md set to manager role"
 
 # ── 8. Start heartbeat daemon ─────────────────────────────────────────────
-HEARTBEAT_PID_FILE="$WORKDIR/.agent/state/heartbeat.pid"
-# Kill any stale heartbeat from a previous session
-if [[ -f "$HEARTBEAT_PID_FILE" ]]; then
-  OLD_PID=$(cat "$HEARTBEAT_PID_FILE")
-  kill "$OLD_PID" 2>/dev/null || true
-  rm -f "$HEARTBEAT_PID_FILE"
-fi
 export KAREN_HUB_DIR="$WORKDIR/.agent"
-"$SCRIPT_DIR/scripts/heartbeat.sh" loop 20 > "$WORKDIR/.agent/state/heartbeat.log" 2>&1 &
-HEARTBEAT_PID=$!
-echo "$HEARTBEAT_PID" > "$HEARTBEAT_PID_FILE"
-echo "✓ Heartbeat daemon started (PID $HEARTBEAT_PID, every 20s)"
+if [[ "${KAREN_HEARTBEAT:-on}" == "off" ]]; then
+  echo "⚠ Heartbeat disabled (KAREN_HEARTBEAT=off)"
+else
+  # The daemon owns its own pidfile (per-hub singleton). Do NOT write the pidfile
+  # here: bootstrap runs on EVERY agent spawn, so N concurrent boots would race —
+  # the singleton makes the 2nd..Nth refuse, but writing their dead pids here
+  # would corrupt the live daemon's entry (root cause of the 102-daemon leak).
+  "$SCRIPT_DIR/scripts/heartbeat.sh" loop 20 > "$WORKDIR/.agent/state/heartbeat.log" 2>&1 &
+  echo "✓ Heartbeat daemon started (every 20s)"
+fi
 
 # ── 9. Sidebar status ──────────────────────────────────────────────────────
 export AGENT_ROLE="manager"

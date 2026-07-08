@@ -174,6 +174,10 @@ MOCK
 
   export PATH="$MOCK_BIN:$ORIG_PATH"
   export AGENT_MUX_BACKEND="cmux"
+  # Never let bootstrap.sh/up.sh spawn a real (loop) heartbeat daemon during a
+  # test — mock cmux doesn't stop the daemon, so it would leak on every run.
+  # Heartbeat-specific tests invoke heartbeat.sh directly, bypassing this toggle.
+  export KAREN_HEARTBEAT=off
   mkdir -p "$TEST_TMPDIR/project"
 
   # Central hub setup
@@ -193,8 +197,18 @@ COMMS
 
 teardown() {
   export PATH="$ORIG_PATH"
+  # Backstop: stop any heartbeat daemon a test started in this hub. TERM first so
+  # its trap reaps its own sleep child; then sweep children + SIGKILL so nothing
+  # can survive teardown and leak.
+  if [[ -n "${KAREN_HUB_DIR:-}" && -f "$KAREN_HUB_DIR/state/heartbeat.pid" ]]; then
+    local _hbpid; _hbpid=$(cat "$KAREN_HUB_DIR/state/heartbeat.pid" 2>/dev/null)
+    kill "$_hbpid" 2>/dev/null || true
+    pkill -9 -P "$_hbpid" 2>/dev/null || true
+    kill -9 "$_hbpid" 2>/dev/null || true
+  fi
   unset AGENT_MUX_BACKEND
   unset AGENT_ROLE
+  unset KAREN_HEARTBEAT
   unset KAREN_HUB_DIR
   unset KAREN_AGENT_ID
   unset KAREN_PROJECT_KEY
@@ -1656,14 +1670,156 @@ YAML
   local output rc=0
   output=$(cd "$nested" && unset KAREN_CONFIG KAREN_HUB_DIR && "$SCAFFOLD_ROOT/scripts/up.sh" 2>&1) || rc=$?
 
-  # up.sh backgrounds a heartbeat daemon via nohup — kill it immediately so
-  # this test doesn't leak a long-running process onto the host.
+  # up.sh backgrounds a heartbeat daemon (which now owns its own pidfile). Poll
+  # briefly for the pidfile, then kill it so this test doesn't leak the process.
   local pid_file="$ws_dir/.karen/hub/state/heartbeat.pid"
+  local _i
+  for _i in $(seq 1 30); do [[ -f "$pid_file" ]] && break; sleep 0.1; done
   if [[ -f "$pid_file" ]]; then
     kill "$(cat "$pid_file")" 2>/dev/null || true
   fi
 
   assert_contains "up.sh resolves nearest workspace config's hub" "$output" "$ws_dir/.karen/hub"
+}
+
+# ═══════════════════════════════════════════════════════════════════════
+# Suite 18: heartbeat daemon — singleton, verify-before-escalate, dedupe,
+#           status/stop subcommands (P1 fix for the 102-daemon leak)
+# ═══════════════════════════════════════════════════════════════════════
+
+# Run a command in the background and wait up to $1 seconds for it to exit on
+# its own. Sets _BG_RC (124 if it had to be killed) and _BG_OUT. Used to test
+# that `loop` REFUSES fast (exits) instead of entering its infinite loop.
+_hb_soft_wait() {
+  local secs="$1"; shift
+  "$@" > "$TEST_TMPDIR/_bg_out" 2>&1 &
+  local p=$! i=0
+  while kill -0 "$p" 2>/dev/null; do
+    sleep 0.1; i=$((i + 1))
+    if [[ $i -ge $((secs * 10)) ]]; then
+      kill "$p" 2>/dev/null || true; wait "$p" 2>/dev/null || true
+      _BG_RC=124; _BG_OUT="$(cat "$TEST_TMPDIR/_bg_out")"; return
+    fi
+  done
+  wait "$p" 2>/dev/null; _BG_RC=$?; _BG_OUT="$(cat "$TEST_TMPDIR/_bg_out")"
+}
+
+# Start a REAL heartbeat daemon (loop, effectively idle at 300s) in the current
+# test hub and echo its PID. A genuine heartbeat.sh process so the identity guard
+# (pid_is_live_heartbeat) recognizes it. Callers must _hb_kill it.
+_hb_start() {
+  HEARTBEAT_VERIFY_DELAY=0 "$SCAFFOLD_ROOT/scripts/heartbeat.sh" loop 300 >/dev/null 2>&1 &
+  local i
+  for i in $(seq 1 30); do [[ -f "$KAREN_HUB_DIR/state/heartbeat.pid" ]] && break; sleep 0.1; done
+  cat "$KAREN_HUB_DIR/state/heartbeat.pid" 2>/dev/null
+}
+# Stop a test daemon cleanly: TERM first so its trap reaps its own sleep child
+# and exits; SIGKILL (+ child sweep) as a backstop so nothing ever leaks.
+_hb_kill() {
+  local pid="$1" i
+  kill "$pid" 2>/dev/null || true
+  for i in 1 2 3 4 5; do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+  pkill -9 -P "$pid" 2>/dev/null || true
+  kill -9 "$pid" 2>/dev/null || true
+}
+
+test_heartbeat_loop_refuses_when_already_running() {
+  local pid; pid=$(_hb_start)
+  _hb_soft_wait 3 env HEARTBEAT_VERIFY_DELAY=0 "$SCAFFOLD_ROOT/scripts/heartbeat.sh" loop 1
+  local after; after=$(cat "$KAREN_HUB_DIR/state/heartbeat.pid" 2>/dev/null)
+  _hb_kill "$pid"
+  assert_contains "loop refuses when a live heartbeat already owns the hub" "$_BG_OUT" "already running"
+  assert_eq "refused loop leaves the original daemon's pidfile intact" "$pid" "$after"
+}
+
+test_heartbeat_status_reports_not_running_when_absent() {
+  rm -f "$KAREN_HUB_DIR/state/heartbeat.pid"
+  local out; out=$("$SCAFFOLD_ROOT/scripts/heartbeat.sh" status 2>&1)
+  assert_contains "status reports not running when no pidfile exists" "$out" "not running"
+}
+
+test_heartbeat_status_reports_running_when_live() {
+  local pid; pid=$(_hb_start)
+  local out; out=$("$SCAFFOLD_ROOT/scripts/heartbeat.sh" status 2>&1)
+  _hb_kill "$pid"
+  assert_contains "status reports running with the live PID" "$out" "running (PID $pid)"
+}
+
+test_heartbeat_stop_kills_running_daemon() {
+  local pid; pid=$(_hb_start)
+  local out; out=$("$SCAFFOLD_ROOT/scripts/heartbeat.sh" stop 2>&1)
+  assert_contains "stop reports the daemon stopped" "$out" "stopped (PID $pid)"
+  if kill -0 "$pid" 2>/dev/null; then
+    _hb_kill "$pid"
+    assert_eq "stop actually killed the daemon" "dead" "alive"
+  else
+    assert_eq "stop actually killed the daemon" "dead" "dead"
+  fi
+  assert_file_not_exists "stop removes the pidfile" "$KAREN_HUB_DIR/state/heartbeat.pid"
+}
+
+test_heartbeat_no_escalation_on_transient_readscreen_failure() {
+  cat > "$MOCK_BIN/cmux" << MOCK
+#!/usr/bin/env bash
+C="$TEST_TMPDIR/_rs_count"
+case "\$1" in
+  read-screen)
+    n=0; [[ -f "\$C" ]] && n=\$(cat "\$C"); n=\$((n + 1)); echo "\$n" > "\$C"
+    if [[ \$n -le 1 ]]; then exit 1; else echo "working"; exit 0; fi ;;
+  *) true ;;
+esac
+MOCK
+  chmod +x "$MOCK_BIN/cmux"
+  echo "workspace:5001" > "$KAREN_HUB_DIR/state/test-dev1_workspace"
+  HEARTBEAT_VERIFY_DELAY=0 "$SCAFFOLD_ROOT/scripts/heartbeat.sh" once >/dev/null 2>&1
+  assert_file_not_exists "no escalation when the first read-screen was a transient failure" "$KAREN_HUB_DIR/inbox/test-manager.jsonl"
+}
+
+test_heartbeat_dead_agent_escalates_once_across_ticks() {
+  cat > "$MOCK_BIN/cmux" << 'MOCK'
+#!/usr/bin/env bash
+case "$1" in
+  read-screen) exit 1 ;;
+  *) true ;;
+esac
+MOCK
+  chmod +x "$MOCK_BIN/cmux"
+  echo "workspace:5001" > "$KAREN_HUB_DIR/state/test-dev1_workspace"
+  HEARTBEAT_VERIFY_DELAY=0 "$SCAFFOLD_ROOT/scripts/heartbeat.sh" once >/dev/null 2>&1
+  HEARTBEAT_VERIFY_DELAY=0 "$SCAFFOLD_ROOT/scripts/heartbeat.sh" once >/dev/null 2>&1
+  assert_line_count "genuinely-dead agent escalates exactly once across two ticks" "$KAREN_HUB_DIR/inbox/test-manager.jsonl" 1
+}
+
+test_heartbeat_recovered_agent_reescalates_on_next_death() {
+  cat > "$MOCK_BIN/cmux" << MOCK
+#!/usr/bin/env bash
+MODE_F="$TEST_TMPDIR/_cmux_mode"
+mode=dead; [[ -f "\$MODE_F" ]] && mode=\$(cat "\$MODE_F")
+case "\$1" in
+  read-screen) if [[ "\$mode" == dead ]]; then exit 1; else echo working; exit 0; fi ;;
+  *) true ;;
+esac
+MOCK
+  chmod +x "$MOCK_BIN/cmux"
+  echo "workspace:5001" > "$KAREN_HUB_DIR/state/test-dev1_workspace"
+  local inbox="$KAREN_HUB_DIR/inbox/test-manager.jsonl"
+  echo dead  > "$TEST_TMPDIR/_cmux_mode"; HEARTBEAT_VERIFY_DELAY=0 "$SCAFFOLD_ROOT/scripts/heartbeat.sh" once >/dev/null 2>&1
+  echo alive > "$TEST_TMPDIR/_cmux_mode"; HEARTBEAT_VERIFY_DELAY=0 "$SCAFFOLD_ROOT/scripts/heartbeat.sh" once >/dev/null 2>&1
+  echo dead  > "$TEST_TMPDIR/_cmux_mode"; HEARTBEAT_VERIFY_DELAY=0 "$SCAFFOLD_ROOT/scripts/heartbeat.sh" once >/dev/null 2>&1
+  assert_line_count "recovered-then-dead agent re-escalates (marker cleared on recovery)" "$inbox" 2
+}
+
+test_heartbeat_ignores_stale_pidfile_of_unrelated_process() {
+  # A stale pidfile whose PID was recycled to an unrelated live process must NOT
+  # be treated as a running daemon — and stop must never kill that process.
+  sleep 300 & local other=$!
+  echo "$other" > "$KAREN_HUB_DIR/state/heartbeat.pid"
+  local s; s=$("$SCAFFOLD_ROOT/scripts/heartbeat.sh" status 2>&1)
+  "$SCAFFOLD_ROOT/scripts/heartbeat.sh" stop >/dev/null 2>&1
+  local still=no; kill -0 "$other" 2>/dev/null && still=yes
+  kill -9 "$other" 2>/dev/null || true
+  assert_contains "status ignores a stale pidfile pointing at a non-heartbeat process" "$s" "not running"
+  assert_eq "stop must NOT kill an unrelated (recycled-PID) process" "yes" "$still"
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1817,6 +1973,17 @@ main() {
   echo "── Suite 17: workspace wiring — config.sh / up.sh ──"
   run_test test_config_show_uses_nearest_workspace_config
   run_test test_up_uses_nearest_workspace_config
+  echo ""
+
+  echo "── Suite 18: heartbeat daemon (singleton / verify / dedupe / status-stop) ──"
+  run_test test_heartbeat_loop_refuses_when_already_running
+  run_test test_heartbeat_status_reports_not_running_when_absent
+  run_test test_heartbeat_status_reports_running_when_live
+  run_test test_heartbeat_stop_kills_running_daemon
+  run_test test_heartbeat_no_escalation_on_transient_readscreen_failure
+  run_test test_heartbeat_dead_agent_escalates_once_across_ticks
+  run_test test_heartbeat_recovered_agent_reescalates_on_next_death
+  run_test test_heartbeat_ignores_stale_pidfile_of_unrelated_process
   echo ""
 
   # ── Summary ──
