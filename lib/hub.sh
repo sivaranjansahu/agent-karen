@@ -29,9 +29,16 @@ resolve_karen_config() {
 
   # Guard against a stale/deleted cwd: pwd failing or returning empty must not
   # loop forever — dirname on "" (or ".") returns "." indefinitely, never "/".
-  local DIR
+  #
+  # Stop strictly BEFORE $HOME: $HOME is always an ancestor of any cwd beneath
+  # it, so a real ~/.karen/config.yaml (the plain global setup) would
+  # otherwise always be "found" by this search first — mislabeling ordinary
+  # global-config usage as a discovered workspace. A config at exactly
+  # $HOME/.karen/config.yaml IS the global fallback below, not a workspace.
+  local DIR HOME_DIR
   DIR="$(pwd 2>/dev/null)" || DIR=""
-  while [[ -n "$DIR" && "$DIR" != "/" ]]; do
+  HOME_DIR="$(cd "$HOME" 2>/dev/null && pwd)" || HOME_DIR=""
+  while [[ -n "$DIR" && "$DIR" != "/" && "$DIR" != "$HOME_DIR" ]]; do
     if [[ -f "$DIR/.karen/config.yaml" ]]; then
       echo "$DIR/.karen/config.yaml"
       return 0

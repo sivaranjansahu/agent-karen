@@ -881,9 +881,10 @@ test_cli_where_reports_workspace_root_and_tier() {
   mkdir -p "$ws_dir/.karen" "$nested"
   echo "projects: {}" > "$ws_dir/.karen/config.yaml"
 
-  local output
+  local output workspace_root_line
   output=$(cd "$nested" && unset KAREN_CONFIG KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR && "$SCAFFOLD_ROOT/scripts/where.sh" 2>&1)
-  assert_contains "where reports workspace root" "$output" "$ws_dir"
+  workspace_root_line=$(echo "$output" | grep "^workspace root:" | sed -E 's/^workspace root: *//')
+  assert_eq "where reports workspace root as the ws dir itself, not .karen/" "$ws_dir" "$workspace_root_line"
   assert_contains "where reports workspace config tier" "$output" "workspace"
   assert_contains "where reports self-contained hub under .karen" "$output" "$ws_dir/.karen"
 }
@@ -1516,6 +1517,28 @@ test_hub_config_falls_back_to_global() {
   assert_eq "fallback signals non-workspace via exit code" "1" "$rc"
 }
 
+test_hub_config_at_home_itself_is_global_not_workspace() {
+  # $HOME is always an ancestor of any cwd under it, so a real
+  # ~/.karen/config.yaml (the plain global setup) would otherwise always be
+  # "found" by the upward search before the loop ever reaches the explicit
+  # fallback line — mislabeling ordinary global-config usage as a discovered
+  # workspace. A config file living at exactly $HOME/.karen/config.yaml must
+  # still report as the global fallback (exit 1), not a workspace (exit 0).
+  mkdir -p "$TEST_TMPDIR/fake-home/.karen" "$TEST_TMPDIR/fake-home/nested/deep"
+  echo "projects: {}" > "$TEST_TMPDIR/fake-home/.karen/config.yaml"
+
+  local result rc=0
+  result=$(
+    cd "$TEST_TMPDIR/fake-home/nested/deep"
+    export HOME="$TEST_TMPDIR/fake-home"
+    unset KAREN_CONFIG KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_karen_config
+  ) || rc=$?
+  assert_eq "path is still \$HOME/.karen/config.yaml" "$TEST_TMPDIR/fake-home/.karen/config.yaml" "$result"
+  assert_eq "but reported as global fallback, not a discovered workspace" "1" "$rc"
+}
+
 test_hub_resolve_hub_dir_workspace_self_contained_no_hub_key() {
   mkdir -p "$TEST_TMPDIR/ws1/.karen" "$TEST_TMPDIR/ws1/sub"
   echo "projects: {}" > "$TEST_TMPDIR/ws1/.karen/config.yaml"
@@ -1782,6 +1805,7 @@ main() {
   run_test test_hub_config_explicit_env_wins
   run_test test_hub_config_nearest_workspace_wins
   run_test test_hub_config_falls_back_to_global
+  run_test test_hub_config_at_home_itself_is_global_not_workspace
   run_test test_hub_resolve_hub_dir_workspace_self_contained_no_hub_key
   run_test test_hub_resolve_hub_dir_workspace_with_explicit_hub_key
   run_test test_hub_resolve_hub_dir_explicit_env_overrides_workspace

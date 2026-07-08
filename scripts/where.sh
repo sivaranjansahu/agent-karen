@@ -35,7 +35,8 @@ elif [[ -n "${KAREN_PROJECT_AGENT_DIR:-}" && -d "$KAREN_PROJECT_AGENT_DIR" ]]; t
   HUB_TIER="explicit (\$KAREN_PROJECT_AGENT_DIR)"
 elif $CONFIG_FOUND_WORKSPACE && [[ -f "$CONFIG_FILE" ]]; then
   HUB_TIER="nearest workspace config"
-  WORKSPACE_ROOT="$(dirname "$CONFIG_FILE")"
+  # The workspace root is the directory containing .karen/, not .karen/ itself.
+  WORKSPACE_ROOT="$(dirname "$(dirname "$CONFIG_FILE")")"
 elif [[ -d "$(pwd)/.agent" ]]; then
   HUB_TIER="standalone (.agent in cwd)"
 elif [[ -n "$HUB_DIR" ]]; then
