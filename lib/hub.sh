@@ -27,8 +27,11 @@ resolve_karen_config() {
     return 0
   fi
 
-  local DIR="$(pwd)"
-  while [[ "$DIR" != "/" ]]; do
+  # Guard against a stale/deleted cwd: pwd failing or returning empty must not
+  # loop forever — dirname on "" (or ".") returns "." indefinitely, never "/".
+  local DIR
+  DIR="$(pwd 2>/dev/null)" || DIR=""
+  while [[ -n "$DIR" && "$DIR" != "/" ]]; do
     if [[ -f "$DIR/.karen/config.yaml" ]]; then
       echo "$DIR/.karen/config.yaml"
       return 0
@@ -69,8 +72,10 @@ print(os.path.expanduser(hub) if hub else '', end='')
     echo "$(pwd)/.agent"
   else
     # Last resort: walk up from pwd to find .agent/ (handles agents that cd'd during work)
-    local DIR="$(pwd)"
-    while [[ "$DIR" != "/" ]]; do
+    # Same stale-cwd guard as resolve_karen_config() above.
+    local DIR
+    DIR="$(pwd 2>/dev/null)" || DIR=""
+    while [[ -n "$DIR" && "$DIR" != "/" ]]; do
       if [[ -d "$DIR/.agent/inbox" ]]; then
         echo "$DIR/.agent"
         return 0

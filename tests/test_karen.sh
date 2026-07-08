@@ -199,6 +199,12 @@ teardown() {
   unset KAREN_AGENT_ID
   unset KAREN_PROJECT_KEY
   unset KAREN_PROJECT_DIR
+  # cd away BEFORE deleting TEST_TMPDIR — a test that cd'd directly (not via a
+  # subshell) leaves the process sitting inside it; deleting it out from under
+  # the cwd leaves the NEXT test starting from a dead directory, where `pwd`
+  # fails and any upward-directory-search loop (resolve_karen_config,
+  # resolve_hub_dir's standalone fallback) can spin forever on dirname(".").
+  cd "$SCAFFOLD_ROOT"
   if [[ -n "$TEST_TMPDIR" && -d "$TEST_TMPDIR" ]]; then
     rm -rf "$TEST_TMPDIR"
   fi
@@ -865,6 +871,26 @@ test_cli_where_fails_without_hub() {
   output=$(cd "$TEST_TMPDIR" && "$SCAFFOLD_ROOT/bin/cli.sh" where 2>&1) || rc=$?
   assert_eq "where exits nonzero with no hub" "1" "$rc"
   assert_contains "where reports unresolved hub" "$output" "UNRESOLVED"
+}
+
+test_cli_where_reports_workspace_root_and_tier() {
+  local ws_dir="$TEST_TMPDIR/wherews"
+  local nested="$ws_dir/nested/deep"
+  mkdir -p "$ws_dir/.karen" "$nested"
+  echo "projects: {}" > "$ws_dir/.karen/config.yaml"
+
+  local output
+  output=$(cd "$nested" && unset KAREN_CONFIG KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR && "$SCAFFOLD_ROOT/scripts/where.sh" 2>&1)
+  assert_contains "where reports workspace root" "$output" "$ws_dir"
+  assert_contains "where reports workspace config tier" "$output" "workspace"
+  assert_contains "where reports self-contained hub under .karen" "$output" "$ws_dir/.karen"
+}
+
+test_cli_where_reports_explicit_tier_when_central_hub() {
+  local output
+  output=$(cd "$TEST_TMPDIR" && "$SCAFFOLD_ROOT/scripts/where.sh" 2>&1)
+  assert_contains "where labels explicit KAREN_HUB_DIR tier" "$output" "explicit"
+  assert_contains "where does not mislabel central hub as workspace tier" "$output" "$KAREN_HUB_DIR"
 }
 
 test_cli_unknown_command() {
@@ -1687,6 +1713,8 @@ main() {
   run_test test_cli_help
   run_test test_cli_where_resolves_hub
   run_test test_cli_where_fails_without_hub
+  run_test test_cli_where_reports_workspace_root_and_tier
+  run_test test_cli_where_reports_explicit_tier_when_central_hub
   run_test test_cli_unknown_command
   run_test test_cli_no_args_shows_help
   run_test test_cli_symlink_resolution
