@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  fleet-poller launchd job — NOT installed automatically. Install yourself:
+
+  1. Replace the two placeholders below:
+       __SCAFFOLD_DIR__ -> absolute path to the agent-karen/agent-scaffold checkout
+                           (where scripts/fleet-poller.sh lives)
+       __FLEET_DIR__     -> absolute path to your fleet workspace
+                           (e.g. /Users/you/projects/fleet)
+
+     sed -e 's|__SCAFFOLD_DIR__|/absolute/path/to/agent-scaffold|g' \
+         -e 's|__FLEET_DIR__|/absolute/path/to/fleet|g' \
+         scripts/com.karen.fleet-poller.plist > ~/Library/LaunchAgents/com.karen.fleet-poller.plist
+
+  2. Load it:
+       launchctl load ~/Library/LaunchAgents/com.karen.fleet-poller.plist
+
+  3. To stop/uninstall:
+       launchctl unload ~/Library/LaunchAgents/com.karen.fleet-poller.plist
+       rm ~/Library/LaunchAgents/com.karen.fleet-poller.plist
+
+  Runs every 3 minutes (StartInterval, not KeepAlive — this is a periodic
+  check, not a persistent daemon; per-run cost is a handful of curl/gh calls,
+  no LLM). Adjust StartInterval (seconds) if you want a different cadence.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.karen.fleet-poller</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__SCAFFOLD_DIR__/scripts/fleet-poller.sh</string>
+        <string>__FLEET_DIR__</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__FLEET_DIR__</string>
+    <key>StartInterval</key>
+    <integer>180</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__FLEET_DIR__/poller.log</string>
+    <key>StandardErrorPath</key>
+    <string>__FLEET_DIR__/poller.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+</dict>
+</plist>

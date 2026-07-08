@@ -2477,6 +2477,27 @@ test_fleet_manager_role_covers_required_sections() {
   assert_contains "never-pretend framing on spawn failure" "$content" "ever pretend"
 }
 
+# ── scripts/com.karen.fleet-poller.plist — structural lint (provided, not
+# installed) ────────────────────────────────────────────────────────────────
+
+test_fleet_poller_plist_exists_and_valid() {
+  local plist="$SCAFFOLD_ROOT/scripts/com.karen.fleet-poller.plist"
+  assert_file_exists "fleet-poller plist exists" "$plist"
+
+  local content=""
+  [[ -f "$plist" ]] && content=$(cat "$plist")
+  assert_contains "plist labels itself" "$content" "com.karen.fleet-poller"
+  assert_contains "plist references fleet-poller.sh" "$content" "fleet-poller.sh"
+  assert_contains "plist is periodic (StartInterval)" "$content" "StartInterval"
+  assert_contains "plist documents install steps, not auto-install" "$content" "launchctl load"
+
+  if command -v plutil >/dev/null 2>&1 && [[ -f "$plist" ]]; then
+    local rc=0
+    plutil -lint "$plist" >/dev/null 2>&1 || rc=$?
+    assert_eq "plist is valid XML/plist syntax" "0" "$rc"
+  fi
+}
+
 # ═══════════════════════════════════════════════════════════════════════
 # TEST RUNNER
 # ═══════════════════════════════════════════════════════════════════════
@@ -2685,6 +2706,7 @@ main() {
   run_test test_fleet_poller_heartbeat_checkin_when_configured
   run_test test_fleet_manager_role_file_exists
   run_test test_fleet_manager_role_covers_required_sections
+  run_test test_fleet_poller_plist_exists_and_valid
   echo ""
 
   # ── Summary ──
