@@ -1673,6 +1673,32 @@ test_hub_two_sibling_workspaces_resolve_independently() {
   assert_eq "sibling workspace B resolves its own hub" "$TEST_TMPDIR/wsB/.karen" "$result_b"
 }
 
+test_hub_fleet_shaped_workspace_resolves_from_registry_and_incidents_dirs() {
+  # Extends the two-sibling pattern above for the fleet-monitoring workspace's
+  # actual shape (registry/, incidents/queue/) rather than a generic nested
+  # dir — proves the ladder generalizes to fleet's real layout, not just an
+  # abstract "nested/deep" fixture. Not a fork of the pattern: same
+  # resolve_hub_dir() call, same assertion shape, just fleet's real subdirs.
+  mkdir -p "$TEST_TMPDIR/fleetws/.karen" "$TEST_TMPDIR/fleetws/registry" "$TEST_TMPDIR/fleetws/incidents/queue"
+  echo "projects: {}" > "$TEST_TMPDIR/fleetws/.karen/config.yaml"
+
+  local result_from_registry result_from_queue
+  result_from_registry=$(
+    cd "$TEST_TMPDIR/fleetws/registry"
+    unset KAREN_CONFIG KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_hub_dir
+  )
+  result_from_queue=$(
+    cd "$TEST_TMPDIR/fleetws/incidents/queue"
+    unset KAREN_CONFIG KAREN_HUB_DIR KAREN_PROJECT_AGENT_DIR
+    source "$SCAFFOLD_ROOT/lib/hub.sh"
+    resolve_hub_dir
+  )
+  assert_eq "resolves fleet's own hub from registry/" "$TEST_TMPDIR/fleetws/.karen" "$result_from_registry"
+  assert_eq "resolves fleet's own hub from incidents/queue/" "$TEST_TMPDIR/fleetws/.karen" "$result_from_queue"
+}
+
 # ═══════════════════════════════════════════════════════════════════════
 # SUITE 17: workspace wiring — config.sh / up.sh
 # ═══════════════════════════════════════════════════════════════════════
@@ -2684,6 +2710,7 @@ main() {
   run_test test_hub_resolve_hub_dir_standalone_agent_unchanged_without_workspace_config
   run_test test_hub_resolve_hub_dir_central_hub_regression
   run_test test_hub_two_sibling_workspaces_resolve_independently
+  run_test test_hub_fleet_shaped_workspace_resolves_from_registry_and_incidents_dirs
   echo ""
 
   echo "── Suite 17: workspace wiring — config.sh / up.sh ──"
