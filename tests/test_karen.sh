@@ -2304,6 +2304,20 @@ test_fleet_write_incident_creates_json() {
   assert_contains "incident has site" "$content" "testsite"
   assert_contains "incident has signal" "$content" "health_probe_failed"
   assert_contains "incident has detail" "$content" "503"
+
+  # Precise structural check: detail must parse as the ORIGINAL JSON object
+  # (a {"code": "..."} dict), not fall back to a stringified {"raw": "..."}
+  # wrapper — a bug here (bash's ${4:-{}} silently eating a brace) previously
+  # slipped past the substring check above since "raw" fallback text still
+  # happens to contain "503" somewhere in it.
+  local detail_code
+  detail_code=$(python3 -c "
+import json
+with open('$written') as f:
+    d = json.load(f)
+print(d.get('detail', {}).get('code', ''))
+" 2>/dev/null)
+  assert_eq "detail is a real parsed object, not a raw-string fallback" "503" "$detail_code"
 }
 
 test_fleet_write_incident_dedupes_same_site_signal() {
@@ -2421,6 +2435,31 @@ YAML
   [[ -f "$TEST_TMPDIR/fleet/.karen/inbox/fleet-manager.jsonl" ]] && \
     inbox_content=$(cat "$TEST_TMPDIR/fleet/.karen/inbox/fleet-manager.jsonl")
   assert_contains "fleet manager gets queued a wake message" "$inbox_content" "signal"
+}
+
+test_fleet_poller_wake_targets_fleet_workspace_not_ambient_hub() {
+  # Real-world bug found via a live smoke run: if the CALLER's shell already
+  # has KAREN_HUB_DIR set (e.g. an interactive karen-dev1 session testing the
+  # poller by hand), that ambient var leaked into the msg.sh call and
+  # silently misdirected the wake to the CALLER's hub instead of the fleet
+  # workspace's own hub. The poller takes an explicit workspace dir precisely
+  # so it shouldn't be ambient-context-dependent — this locks that down.
+  _setup_fleet_workspace
+  cat > "$TEST_TMPDIR/fleet/registry/site.yaml" << 'YAML'
+name: testsite
+health_url: https://example.com/
+YAML
+  _setup_fleet_mocks 503
+
+  local other_hub="$TEST_TMPDIR/some-other-unrelated-hub"
+  mkdir -p "$other_hub/inbox"
+
+  (export KAREN_HUB_DIR="$other_hub"
+   unset KAREN_CONFIG KAREN_PROJECT_AGENT_DIR
+   FLEET_ENV_FILE="$TEST_TMPDIR/no-such-fleet.env" "$SCAFFOLD_ROOT/scripts/fleet-poller.sh" "$TEST_TMPDIR/fleet" >/dev/null 2>&1) || true
+
+  assert_file_not_exists "wake did NOT leak into the caller's ambient hub" "$other_hub/inbox/fleet-manager.jsonl"
+  assert_file_exists "wake landed in the fleet workspace's own hub" "$TEST_TMPDIR/fleet/.karen/inbox/fleet-manager.jsonl"
 }
 
 test_fleet_poller_never_spawns() {
@@ -2702,6 +2741,7 @@ main() {
   run_test test_fleet_poller_no_incident_when_healthy
   run_test test_fleet_poller_degrades_gracefully_without_fleet_env
   run_test test_fleet_poller_wakes_fleet_manager_via_msg
+  run_test test_fleet_poller_wake_targets_fleet_workspace_not_ambient_hub
   run_test test_fleet_poller_never_spawns
   run_test test_fleet_poller_heartbeat_checkin_when_configured
   run_test test_fleet_manager_role_file_exists

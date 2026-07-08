@@ -95,8 +95,18 @@ fi
 # Wake the fleet manager if anything signaled — msg.sh queues silently if
 # the agent isn't alive, so this is safe to call unconditionally; it never
 # spawns anything itself.
+#
+# Explicitly unset any ambient KAREN_HUB_DIR/KAREN_CONFIG/KAREN_PROJECT_AGENT_DIR
+# before calling msg.sh: this script takes $FLEET_DIR as an explicit argument
+# specifically so its behavior doesn't depend on the caller's environment —
+# but resolve_hub_dir()'s explicit-override tier always wins over cwd-based
+# workspace resolution, so an inherited KAREN_HUB_DIR (e.g. a human testing
+# this by hand from an already-karen-contextualized shell) would silently
+# redirect the wake to the CALLER's hub instead of this fleet workspace's own
+# hub. Found via a live smoke run, not hypothetical.
 if [[ "$SIGNALED" -gt 0 ]]; then
   (
+    unset KAREN_HUB_DIR KAREN_CONFIG KAREN_PROJECT_AGENT_DIR
     cd "$FLEET_DIR" && \
     export KAREN_AGENT_ID="fleet-poller" && \
     "$ROOT/scripts/msg.sh" "$FLEET_MANAGER_AGENT_ID" \

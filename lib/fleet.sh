@@ -221,7 +221,14 @@ for c in json.loads(sys.stdin.read()):
 # treats "already queued" the same as "just queued" (either way, an incident
 # for this site+signal is sitting in the queue for the fleet manager).
 fleet_write_incident() {
-  local fleet_dir="$1" site="$2" signal="$3" detail_json="${4:-{}}"
+  local fleet_dir="$1" site="$2" signal="$3"
+  # NOT `detail_json="${4:-{}}"` on the declaration line above: bash's brace
+  # matching inside ${var:-default} treats the first unescaped `}` as closing
+  # the expansion, so a literal `{}` default silently truncates to `{` and
+  # leaks a stray `}` onto whatever follows — corrupting a real $4 value
+  # rather than just supplying a fallback. Assign the default separately.
+  local detail_json="${4:-}"
+  [[ -z "$detail_json" ]] && detail_json="{}"
   local queue_dir="$fleet_dir/incidents/queue"
   mkdir -p "$queue_dir"
 
