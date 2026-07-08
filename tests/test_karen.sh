@@ -1162,6 +1162,36 @@ test_bootstrap_clears_stale_surface_files() {
   assert_file_not_exists "stale workspace cleared" "$TEST_TMPDIR/project/.agent/state/dev1_workspace"
 }
 
+test_bootstrap_bd_init_is_noninteractive() {
+  # `bd init` can block a spawn on an interactive prompt ("Contributing to
+  # someone else's repo? [y/N]") in unfamiliar git contexts — and 2>/dev/null
+  # does NOT suppress a prompt written to the stdout tty. The fix runs bd init
+  # with stdin from /dev/null so it stays non-interactive. Prove bd init sees
+  # EOF even when the CALLER's stdin has data waiting.
+  export KAREN_CONFIG="$TEST_TMPDIR/bd-noninteractive-config.yaml"
+  cat > "$KAREN_CONFIG" << YAML
+projects:
+  project:
+    dir: $TEST_TMPDIR/project
+YAML
+  cat > "$MOCK_BIN/bd" << MOCK
+#!/usr/bin/env bash
+case "\$1" in
+  --version) echo "mock-beads 0.0.0" ;;
+  init)
+    if IFS= read -r _l; then echo GOTDATA > "$TEST_TMPDIR/_bd_init_stdin"; else echo EOF > "$TEST_TMPDIR/_bd_init_stdin"; fi
+    mkdir -p .beads ;;
+  quickstart) true ;;
+  *) true ;;
+esac
+MOCK
+  chmod +x "$MOCK_BIN/bd"
+  cd "$TEST_TMPDIR/project"
+  printf 'SENTINEL\n' | "$SCAFFOLD_ROOT/bootstrap.sh" "$TEST_TMPDIR/project" >/dev/null 2>&1 || true
+  unset KAREN_CONFIG
+  assert_eq "bootstrap runs bd init non-interactively (stdin=/dev/null → EOF, not caller data)" "EOF" "$(cat "$TEST_TMPDIR/_bd_init_stdin" 2>/dev/null)"
+}
+
 # ═══════════════════════════════════════════════════════════════════════
 # SUITE 10: Symlink resolution (production path)
 #   Scripts are invoked via .agent/scripts symlink, NOT direct path.
@@ -2180,6 +2210,7 @@ main() {
   run_test test_bootstrap_copies_manager_role
   run_test test_bootstrap_creates_manager_workspace_file
   run_test test_bootstrap_clears_stale_surface_files
+  run_test test_bootstrap_bd_init_is_noninteractive
   echo ""
 
   echo "── Suite 12: KAREN_HUB_DIR resolution ──"

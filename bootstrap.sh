@@ -149,7 +149,7 @@ export BEADS_ROOT="$WORKDIR"
 if command -v bd &>/dev/null; then
   cd "$WORKDIR"
   if [[ ! -d ".beads" ]]; then
-    bd init 2>/dev/null && echo "✓ Beads initialised (.beads/)" || echo "⚠ bd init failed — check beads install"
+    bd init </dev/null 2>/dev/null && echo "✓ Beads initialised (.beads/)" || echo "⚠ bd init failed — check beads install"
   else
     echo "✓ Beads already initialised"
   fi

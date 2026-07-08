@@ -294,7 +294,7 @@ cd "$WORKDIR" && \
   export KAREN_PROJECT_DIR="$WORKDIR" && \
   export BEADS_ROOT="$WORKDIR" && \
   if [[ ! -f CLAUDE.md ]] || ! grep -q '^# ROLE:' CLAUDE.md 2>/dev/null; then cp "$ROLE_FILE" CLAUDE.md; else echo '# Role file preserved (already exists with ROLE header)'; fi && \
-  if [[ ! -d .beads ]]; then bd init 2>/dev/null || true; fi && \
+  if [[ ! -d .beads ]]; then bd init </dev/null 2>/dev/null || true; fi && \
   bd quickstart 2>/dev/null || true && \
   $LAUNCH_LINE "You have been activated as $AGENT_ID (role: $SHORT_ROLE, project: $PROJECT_KEY). Orient yourself in this order:
 1. Read CLAUDE.md for your role instructions.

@@ -135,7 +135,7 @@ fi
 
 if command -v bd &>/dev/null; then
   if [[ ! -d "$PROJECT_DIR/.beads" ]]; then
-    (cd "$PROJECT_DIR" && bd init 2>/dev/null) || true
+    (cd "$PROJECT_DIR" && bd init </dev/null 2>/dev/null) || true
     echo "  ✓ Beads initialized in project"
   else
     echo "  ✓ Beads already initialized"
