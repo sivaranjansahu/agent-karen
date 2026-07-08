@@ -2100,6 +2100,241 @@ YAML
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+# Suite 20: fleet monitoring — lib/fleet.sh detection functions
+# ═══════════════════════════════════════════════════════════════════════
+
+# Mocks curl (health-check %{http_code} pattern vs. everything else, which
+# covers both Sentry-issues and Sentry-crons-checkin responses) and gh
+# (run list). Callers pass only what their scenario needs.
+_setup_fleet_mocks() {
+  local health_code="${1:-200}"
+  local sentry_json="${2:-[]}"
+  local gh_json="${3:-[]}"
+
+  cat > "$MOCK_BIN/curl" << EOF
+#!/usr/bin/env bash
+if [[ "\$*" == *"%{http_code}"* ]]; then
+  echo "$health_code"
+else
+  echo '$sentry_json'
+fi
+EOF
+  chmod +x "$MOCK_BIN/curl"
+
+  cat > "$MOCK_BIN/gh" << EOF
+#!/usr/bin/env bash
+if [[ "\$1" == "run" && "\$2" == "list" ]]; then
+  echo '$gh_json'
+else
+  true
+fi
+EOF
+  chmod +x "$MOCK_BIN/gh"
+}
+
+test_fleet_parse_manifest_extracts_scalars() {
+  mkdir -p "$TEST_TMPDIR/registry"
+  cat > "$TEST_TMPDIR/registry/site.yaml" << 'YAML'
+name: testsite
+health_url: https://example.com/
+repo: /path/to/repo
+manager: testsite-manager
+sentry_project: testsite-proj
+crons:
+  - slug: daily
+    grace_hours: 6
+YAML
+
+  local out
+  out=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_parse_manifest "$TEST_TMPDIR/registry/site.yaml" 2>/dev/null) || true
+  eval "$out" 2>/dev/null || true
+  assert_eq "manifest name parsed" "testsite" "${FLEET_NAME:-}"
+  assert_eq "manifest health_url parsed" "https://example.com/" "${FLEET_HEALTH_URL:-}"
+  assert_eq "manifest repo parsed" "/path/to/repo" "${FLEET_REPO:-}"
+  assert_eq "manifest manager parsed" "testsite-manager" "${FLEET_MANAGER:-}"
+  assert_eq "manifest sentry_project parsed" "testsite-proj" "${FLEET_SENTRY_PROJECT:-}"
+  assert_contains "manifest crons captured" "${FLEET_CRONS_JSON:-}" "daily"
+}
+
+test_fleet_check_health_ok_on_200() {
+  _setup_fleet_mocks 200
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_health "https://example.com/") || rc=$?
+  assert_eq "200 is healthy" "ok" "$result"
+  assert_eq "200 returns success" "0" "$rc"
+}
+
+test_fleet_check_health_fails_on_503() {
+  _setup_fleet_mocks 503
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_health "https://example.com/") || rc=$?
+  assert_contains "503 reported as failure" "$result" "fail"
+  assert_eq "503 returns signal (nonzero)" "1" "$rc"
+}
+
+test_fleet_check_health_skips_when_url_empty() {
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_health "") || rc=$?
+  assert_eq "empty url skips" "skip" "$result"
+  assert_eq "skip returns success (not a signal)" "0" "$rc"
+}
+
+test_fleet_check_sentry_issues_clean_when_zero() {
+  _setup_fleet_mocks 200 "[]"
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_sentry_issues "myorg" "myproj" "faketoken") || rc=$?
+  assert_eq "empty issue list is clean" "clean" "$result"
+  assert_eq "clean returns success" "0" "$rc"
+}
+
+test_fleet_check_sentry_issues_signals_when_unresolved() {
+  _setup_fleet_mocks 200 '[{"id":"1"},{"id":"2"}]'
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_sentry_issues "myorg" "myproj" "faketoken") || rc=$?
+  assert_eq "2 unresolved issues reported" "unresolved:2" "$result"
+  assert_eq "unresolved returns signal" "1" "$rc"
+}
+
+test_fleet_check_sentry_issues_skips_when_project_unset() {
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_sentry_issues "myorg" "" "faketoken") || rc=$?
+  assert_eq "no project configured skips" "skip" "$result"
+  assert_eq "skip returns success" "0" "$rc"
+}
+
+test_fleet_check_sentry_issues_skips_when_project_none_yet() {
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_sentry_issues "myorg" "none-yet" "faketoken") || rc=$?
+  assert_eq "none-yet sentinel skips" "skip" "$result"
+}
+
+test_fleet_check_sentry_issues_skips_when_token_unset() {
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_sentry_issues "myorg" "myproj" "") || rc=$?
+  assert_eq "no token configured skips" "skip" "$result"
+}
+
+test_fleet_check_gh_actions_ok_on_success() {
+  _setup_fleet_mocks 200 "[]" '[{"conclusion":"success","status":"completed","name":"CI","createdAt":"2026-07-08T00:00:00Z"}]'
+  mkdir -p "$TEST_TMPDIR/repo"
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_gh_actions "$TEST_TMPDIR/repo") || rc=$?
+  assert_eq "successful latest run is ok" "ok" "$result"
+  assert_eq "ok returns success" "0" "$rc"
+}
+
+test_fleet_check_gh_actions_signals_on_failure() {
+  _setup_fleet_mocks 200 "[]" '[{"conclusion":"failure","status":"completed","name":"CI","createdAt":"2026-07-08T00:00:00Z"}]'
+  mkdir -p "$TEST_TMPDIR/repo"
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_gh_actions "$TEST_TMPDIR/repo") || rc=$?
+  assert_contains "failed run reported" "$result" "failed"
+  assert_eq "failure returns signal" "1" "$rc"
+}
+
+test_fleet_check_gh_actions_skips_when_repo_empty() {
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_gh_actions "") || rc=$?
+  assert_eq "no repo configured skips" "skip" "$result"
+}
+
+test_fleet_check_gh_actions_skips_when_dir_absent() {
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_gh_actions "$TEST_TMPDIR/does-not-exist") || rc=$?
+  assert_eq "nonexistent repo dir skips" "skip" "$result"
+}
+
+test_fleet_check_crons_skips_when_sentry_unset() {
+  mkdir -p "$TEST_TMPDIR/registry"
+  cat > "$TEST_TMPDIR/registry/site.yaml" << 'YAML'
+name: testsite
+crons:
+  - slug: daily
+    grace_hours: 6
+YAML
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_crons "$TEST_TMPDIR/registry/site.yaml" "myorg" "faketoken") || rc=$?
+  assert_eq "no sentry_project on manifest skips" "skip" "$result"
+}
+
+test_fleet_check_crons_ok_when_recent_checkin() {
+  mkdir -p "$TEST_TMPDIR/registry"
+  cat > "$TEST_TMPDIR/registry/site.yaml" << 'YAML'
+name: testsite
+sentry_project: testsite-proj
+crons:
+  - slug: daily
+    grace_hours: 6
+YAML
+  local recent_ts
+  recent_ts=$(python3 -c "import datetime; print(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))")
+  _setup_fleet_mocks 200 "[{\"dateCreated\":\"$recent_ts\",\"status\":\"ok\"}]"
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_crons "$TEST_TMPDIR/registry/site.yaml" "myorg" "faketoken") || rc=$?
+  assert_eq "recent checkin is ok" "ok" "$result"
+  assert_eq "ok returns success" "0" "$rc"
+}
+
+test_fleet_check_crons_missed_when_stale_checkin() {
+  mkdir -p "$TEST_TMPDIR/registry"
+  cat > "$TEST_TMPDIR/registry/site.yaml" << 'YAML'
+name: testsite
+sentry_project: testsite-proj
+crons:
+  - slug: daily
+    grace_hours: 6
+YAML
+  local stale_ts
+  stale_ts=$(python3 -c "import datetime; print((datetime.datetime.utcnow() - datetime.timedelta(hours=48)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+  _setup_fleet_mocks 200 "[{\"dateCreated\":\"$stale_ts\",\"status\":\"ok\"}]"
+  local result rc=0
+  result=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_check_crons "$TEST_TMPDIR/registry/site.yaml" "myorg" "faketoken") || rc=$?
+  assert_contains "stale checkin reported as missed" "$result" "missed"
+  assert_eq "missed returns signal" "1" "$rc"
+}
+
+test_fleet_write_incident_creates_json() {
+  mkdir -p "$TEST_TMPDIR/fleet/incidents/queue"
+  local written rc=0
+  written=$(source "$SCAFFOLD_ROOT/lib/fleet.sh" && fleet_write_incident "$TEST_TMPDIR/fleet" "testsite" "health_probe_failed" '{"code":"503"}') || rc=$?
+  assert_eq "incident write succeeds" "0" "$rc"
+  assert_file_exists "incident file created" "$written"
+  local content=""
+  [[ -n "$written" && -f "$written" ]] && content=$(cat "$written")
+  assert_contains "incident has site" "$content" "testsite"
+  assert_contains "incident has signal" "$content" "health_probe_failed"
+  assert_contains "incident has detail" "$content" "503"
+}
+
+test_fleet_write_incident_dedupes_same_site_signal() {
+  mkdir -p "$TEST_TMPDIR/fleet/incidents/queue"
+  # `source` on a nonexistent file is fatal under set -e even with `|| true`
+  # (unlike a normal command's nonzero exit) — gate on existence instead.
+  [[ -f "$SCAFFOLD_ROOT/lib/fleet.sh" ]] && source "$SCAFFOLD_ROOT/lib/fleet.sh"
+  fleet_write_incident "$TEST_TMPDIR/fleet" "testsite" "health_probe_failed" '{"code":"503"}' >/dev/null 2>&1 || true
+
+  local count_before count_after
+  count_before=$(ls "$TEST_TMPDIR/fleet/incidents/queue" 2>/dev/null | wc -l | tr -d ' ')
+  fleet_write_incident "$TEST_TMPDIR/fleet" "testsite" "health_probe_failed" '{"code":"503"}' >/dev/null 2>&1 || true
+  count_after=$(ls "$TEST_TMPDIR/fleet/incidents/queue" 2>/dev/null | wc -l | tr -d ' ')
+
+  assert_eq "second identical incident is deduped, not duplicated" "$count_before" "$count_after"
+}
+
+test_fleet_write_incident_does_not_dedupe_different_signal() {
+  mkdir -p "$TEST_TMPDIR/fleet/incidents/queue"
+  # `source` on a nonexistent file is fatal under set -e even with `|| true`
+  # (unlike a normal command's nonzero exit) — gate on existence instead.
+  [[ -f "$SCAFFOLD_ROOT/lib/fleet.sh" ]] && source "$SCAFFOLD_ROOT/lib/fleet.sh"
+  fleet_write_incident "$TEST_TMPDIR/fleet" "testsite" "health_probe_failed" '{}' >/dev/null 2>&1 || true
+  fleet_write_incident "$TEST_TMPDIR/fleet" "testsite" "sentry_unresolved_issues" '{}' >/dev/null 2>&1 || true
+
+  local count
+  count=$(ls "$TEST_TMPDIR/fleet/incidents/queue" 2>/dev/null | wc -l | tr -d ' ')
+  assert_eq "different signal is not deduped" "2" "$count"
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 # TEST RUNNER
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -2277,6 +2512,28 @@ main() {
   run_test test_bootstrap_runtime_defaults_to_claude
   run_test test_bootstrap_runtime_arg_selects_pi
   run_test test_bootstrap_runtime_config_project_default
+  echo ""
+
+  echo "── Suite 20: fleet monitoring — lib/fleet.sh ──"
+  run_test test_fleet_parse_manifest_extracts_scalars
+  run_test test_fleet_check_health_ok_on_200
+  run_test test_fleet_check_health_fails_on_503
+  run_test test_fleet_check_health_skips_when_url_empty
+  run_test test_fleet_check_sentry_issues_clean_when_zero
+  run_test test_fleet_check_sentry_issues_signals_when_unresolved
+  run_test test_fleet_check_sentry_issues_skips_when_project_unset
+  run_test test_fleet_check_sentry_issues_skips_when_project_none_yet
+  run_test test_fleet_check_sentry_issues_skips_when_token_unset
+  run_test test_fleet_check_gh_actions_ok_on_success
+  run_test test_fleet_check_gh_actions_signals_on_failure
+  run_test test_fleet_check_gh_actions_skips_when_repo_empty
+  run_test test_fleet_check_gh_actions_skips_when_dir_absent
+  run_test test_fleet_check_crons_skips_when_sentry_unset
+  run_test test_fleet_check_crons_ok_when_recent_checkin
+  run_test test_fleet_check_crons_missed_when_stale_checkin
+  run_test test_fleet_write_incident_creates_json
+  run_test test_fleet_write_incident_dedupes_same_site_signal
+  run_test test_fleet_write_incident_does_not_dedupe_different_signal
   echo ""
 
   # ── Summary ──
