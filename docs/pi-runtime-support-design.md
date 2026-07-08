@@ -56,9 +56,21 @@ Resolution ladder for a spawn of `myapp-dev1`: `--runtime` arg → `roles.dev1.r
 
 ## Launch dispatch — what actually differs per runtime
 
-| Concern | Claude Code (today) | Pi |
+**Correction (2026-07-08, verified against the installed `pi --help`, not assumed from
+the cloud migration spec):** local karen agents are **persistent interactive tabs** woken
+by `mux_send` keystroke injection — the exact same mechanism `claude` relies on today.
+Pi's `-p`/`--print` flag is **non-interactive: process one prompt and exit** — the form
+used in the Karen Cloud migration spec's one-shot containers, where the container exits
+when the task is done. That form is wrong here: an exited process has nothing for
+`mux_send` to wake. Per `pi --help`'s own examples, `pi "<prompt>"` (no `-p`) starts
+**interactive** mode with that prompt as the first turn — identical in shape to how
+`claude "<prompt>"` is invoked today, and stays open for later keystroke-injected wakes.
+Local dispatch is therefore `pi "<prompt>" --tools bash,read,write,edit [--provider/--model optional]`,
+**not** `pi -p "<prompt>" ...`.
+
+| Concern | Claude Code (today) | Pi (local karen — corrected) |
 |---|---|---|
-| CLI | `claude --dangerously-skip-permissions [--remote-control ID] [--model M] "<prompt>"` | `pi -p "<prompt>" --provider P --model M --tools <allowlist> -e <ext.ts>` |
+| CLI | `claude --dangerously-skip-permissions [--remote-control ID] [--model M] "<prompt>"` | `pi --tools <allowlist> [--provider P --model M] "<prompt>"` — prompt as a trailing positional arg, no `-p` (see correction above; `-p` is the Cloud one-shot-container form, not local karen's) |
 | Autonomy/permissions | `--dangerously-skip-permissions` (allow all) | **`--tools` allowlist** — MUST include `bash` (so the agent can call `msg.sh`), plus `read,write,edit` and any registered tool |
 | Role file | `CLAUDE.md` | `AGENTS.md` (Pi also reads `CLAUDE.md` for compat — so role files can stay, but canonical is AGENTS.md) |
 | Model/provider | `--model` (Anthropic) | `--provider`/`--model` **optional**; defaults to Pi's OWN configured default. Credentials are **Pi's own** (`/login` OAuth + `~/.pi/agent/auth.json` + env) — NOT karen's concern |
