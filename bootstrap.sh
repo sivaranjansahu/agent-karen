@@ -233,6 +233,13 @@ fi
 
 # ── 9. Sidebar status ──────────────────────────────────────────────────────
 export AGENT_ROLE="manager"
+# Qualify the manager's own identity too — without this, resolve_agent_id/
+# get_sender_id (lib/hub.sh) fall into bare "legacy mode" for the manager AND
+# everything it spawns (spawn.sh's DISPLAY_NAME is "${PROJECT_KEY}:${SHORT_ROLE}",
+# so an empty PROJECT_KEY here produces the exact bare ":dev1" bug). spawn.sh
+# already exports this for agents it spawns (line ~293) — the manager's own
+# launch was the one boot path that didn't.
+export KAREN_PROJECT_KEY="$PROJECT_KEY"
 cmux set-status role "manager" 2>/dev/null || true
 cmux log --level info "Manager session started" 2>/dev/null || true
 

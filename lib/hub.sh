@@ -157,3 +157,28 @@ get_sender_id() {
     echo "manager"
   fi
 }
+
+# ── Live-identity resolution (naming-transition backward compat) ────────────
+# The naming fix (spawn.sh/bootstrap.sh) makes NEW spawns use qualified
+# identity (<project>-<role> inbox, <project>:<role> cmux tab). Agents spawned
+# before the fix are still running under the bare short-role identity, and a
+# hub can end up holding BOTH a bare and a qualified inbox/state-file for the
+# "same" logical agent (one stale, one live, or vice versa) during the
+# transition. The workspace state file (state/<id>_workspace) is the one
+# artifact that reflects what's ACTUALLY running right now — written at spawn
+# time, cleared on close — so it's the correct tie-break, not "whichever
+# inbox file happens to exist." Callers (msg.sh, spawn.sh) use this to decide
+# which identity to address for inbox delivery + wake.
+#
+# Falls back to the qualified ID when NEITHER is live (brand-new agent, not
+# yet spawned, or both are dead) — that's the new default going forward.
+resolve_live_target_id() {
+  local qualified_id="$1" bare_id="$2" hub_dir="$3"
+  if [[ -f "$hub_dir/state/${qualified_id}_workspace" ]]; then
+    echo "$qualified_id"
+  elif [[ -f "$hub_dir/state/${bare_id}_workspace" ]]; then
+    echo "$bare_id"
+  else
+    echo "$qualified_id"
+  fi
+}

@@ -153,7 +153,13 @@ mkdir -p "$HUB_DIR/inbox" "$HUB_DIR/state" "$HUB_DIR/memory" "$HUB_DIR/context/$
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 TS_HUMAN=$(date "+%Y-%m-%d %H:%M:%S UTC")
 
-WS_FILE="$HUB_DIR/state/${AGENT_ID}_workspace"
+# Backward-compat (naming transition): an agent spawned before the naming fix
+# is still alive under its bare short-role identity — resolve to whichever
+# identity actually has a live state file so we reuse it instead of shadowing
+# it with a duplicate spawn under the new qualified name. See
+# lib/hub.sh:resolve_live_target_id.
+LIVE_AGENT_ID=$(resolve_live_target_id "$AGENT_ID" "$SHORT_ROLE" "$HUB_DIR")
+WS_FILE="$HUB_DIR/state/${LIVE_AGENT_ID}_workspace"
 DISPLAY_NAME="${PROJECT_KEY}:${SHORT_ROLE}"
 AGENT_ALIVE=false
 EXISTING_WS=""
@@ -165,9 +171,12 @@ if [[ -f "$WS_FILE" ]]; then
   # Matching ID alone can cause stale cross-project reuse: if workspace:1 belonged to a
   # different project's lead and that workspace is still open, ID-only matching would
   # incorrectly treat it as alive. We require the line that contains the ID to also
-  # contain the expected display name (project:role).
+  # contain the expected display name (project:role) OR the bare short role — a tab
+  # spawned before the naming fix was renamed to the bare role (or ":role") only, not
+  # the qualified form, and grep -w's word-boundary match still finds "role" inside
+  # ":role" correctly.
   WS_LINE=$(echo "$ACTIVE_WS" | grep -E "$EXISTING_WS" | head -1 || true)
-  if [[ -n "$WS_LINE" ]] && echo "$WS_LINE" | grep -qwF "$DISPLAY_NAME"; then
+  if [[ -n "$WS_LINE" ]] && (echo "$WS_LINE" | grep -qwF "$DISPLAY_NAME" || echo "$WS_LINE" | grep -qwF "$SHORT_ROLE"); then
     AGENT_ALIVE=true
   elif echo "$ACTIVE_WS" | grep -qwF "$DISPLAY_NAME"; then
     # Workspace ID is stale but an identically-named tab exists — recover its ID
@@ -183,7 +192,7 @@ if [[ -f "$WS_FILE" ]]; then
   else
     # Workspace ID exists but belongs to a different agent — stale state file, clean up
     echo "▸ Stale state: $WS_FILE points to $EXISTING_WS which belongs to a different agent. Cleaning up."
-    rm -f "$WS_FILE" "$HUB_DIR/state/${AGENT_ID}_surface"
+    rm -f "$WS_FILE" "$HUB_DIR/state/${LIVE_AGENT_ID}_surface"
   fi
 else
   # No state file — still check if a tab with this name exists (leftover from old spawn)
@@ -202,25 +211,25 @@ fi
 # If agent is detected as alive but can't be woken, kill it and respawn fresh
 if $AGENT_ALIVE && [[ -n "$EXISTING_WS" ]]; then
   # Try to wake — if send fails, the workspace might be zombie
-  if ! mux_send "$AGENT_ID" "ping" 2>/dev/null; then
-    echo "▸ $AGENT_ID workspace exists but unresponsive — killing and respawning"
-    mux_close "$AGENT_ID" 2>/dev/null || true
-    rm -f "$WS_FILE" "$HUB_DIR/state/${AGENT_ID}_surface"
+  if ! mux_send "$LIVE_AGENT_ID" "ping" 2>/dev/null; then
+    echo "▸ $LIVE_AGENT_ID workspace exists but unresponsive — killing and respawning"
+    mux_close "$LIVE_AGENT_ID" 2>/dev/null || true
+    rm -f "$WS_FILE" "$HUB_DIR/state/${LIVE_AGENT_ID}_surface"
     AGENT_ALIVE=false
   fi
 fi
 
 if $AGENT_ALIVE; then
   # Agent is alive — reuse by sending context as a new task message
-  echo "▸ $AGENT_ID is already alive in $EXISTING_WS — reusing (not spawning)"
+  echo "▸ $LIVE_AGENT_ID is already alive in $EXISTING_WS — reusing (not spawning)"
 
   CONTEXT_JSON=$(python3 -c "import json, sys; print(json.dumps(sys.argv[1]))" "$CONTEXT")
   echo "{\"from\":\"$FROM\",\"type\":\"message\",\"ts\":\"$TIMESTAMP\",\"body\":$CONTEXT_JSON}" \
-    >> "$HUB_DIR/inbox/${AGENT_ID}.jsonl"
+    >> "$HUB_DIR/inbox/${LIVE_AGENT_ID}.jsonl"
 
   # Log reuse to communications.md
   {
-    echo "## [$TS_HUMAN] \`$FROM\` → \`$AGENT_ID\` (reuse)"
+    echo "## [$TS_HUMAN] \`$FROM\` → \`$LIVE_AGENT_ID\` (reuse)"
     echo ""
     echo "**Reused existing workspace** \`$EXISTING_WS\` instead of spawning."
     echo ""
@@ -233,12 +242,12 @@ if $AGENT_ALIVE; then
   } >> "$COMMS"
 
   # Wake the agent
-  PROMPT="📬 New task from $FROM. Check ${HUB_DIR}/inbox/${AGENT_ID}.jsonl and respond."
-  mux_send "$AGENT_ID" "$PROMPT" 2>/dev/null && \
-    echo "✓ Woke $AGENT_ID with new task" || \
+  PROMPT="📬 New task from $FROM. Check ${HUB_DIR}/inbox/${LIVE_AGENT_ID}.jsonl and respond."
+  mux_send "$LIVE_AGENT_ID" "$PROMPT" 2>/dev/null && \
+    echo "✓ Woke $LIVE_AGENT_ID with new task" || \
     echo "⚠ Send failed — message queued in inbox"
 
-  mux_notify "Task assigned" "$AGENT_ID got new work"
+  mux_notify "Task assigned" "$LIVE_AGENT_ID got new work"
   exit 0
 fi
 

@@ -42,6 +42,9 @@ case "$CMD" in
   init)
     exec "$ROOT/init.sh" "$@"
     ;;
+  workspace)
+    exec "$ROOT/scripts/workspace.sh" "$@"
+    ;;
   start|bootstrap)
     exec "$ROOT/bootstrap.sh" "$@"
     ;;
@@ -79,6 +82,8 @@ automatically (upward search, nearest wins) from anywhere inside it. See
 Coordination" section.
 
 Usage:
+  karen workspace create <name>                 Scaffold a domain workspace (own git repo)
+  karen workspace list                          List existing workspaces
   karen add [--name <key>] [--knowledge <dir>]  Register current dir as a project
   karen up [--project <key>]                    Start agents from ~/.karen/config.yaml
   karen config {show|projects|agents}           Inspect configuration

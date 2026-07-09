@@ -2625,6 +2625,200 @@ test_fleet_poller_plist_exists_and_valid() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+# Suite 21: workspace model P1 — qualified agent identity (backward-compatible)
+#   + `karen workspace create/list`
+# ═══════════════════════════════════════════════════════════════════════
+
+# setup() exports KAREN_PROJECT_KEY="test" for every test's convenience — that
+# ambient value would mask the exact bug we're fixing (bootstrap.sh not
+# exporting it itself). Every test in this suite that exercises bootstrap.sh's
+# OWN export behavior must unset it first to simulate a genuinely clean shell.
+
+test_bootstrap_exports_qualified_project_key_for_manager_session() {
+  unset KAREN_PROJECT_KEY
+  cat > "$MOCK_BIN/claude" << MOCK
+#!/usr/bin/env bash
+env | grep '^KAREN_PROJECT_KEY=' > "$TEST_TMPDIR/_manager_env_capture" || echo 'UNSET' > "$TEST_TMPDIR/_manager_env_capture"
+exit 0
+MOCK
+  chmod +x "$MOCK_BIN/claude"
+  cd "$TEST_TMPDIR/project"
+  "$SCAFFOLD_ROOT/bootstrap.sh" "$TEST_TMPDIR/project" 2>/dev/null || true
+  local captured
+  captured=$(cat "$TEST_TMPDIR/_manager_env_capture" 2>/dev/null || echo "MISSING")
+  assert_contains "manager session gets a real (non-empty) KAREN_PROJECT_KEY" "$captured" "KAREN_PROJECT_KEY=project"
+}
+
+test_bootstrap_then_spawn_produces_qualified_agent_identity_end_to_end() {
+  # Simulate the manager's claude process itself calling spawn.sh (exactly
+  # what happens in production) so we prove the exported KAREN_PROJECT_KEY
+  # actually propagates through to a real spawn — not just that bootstrap.sh
+  # sets a var nothing downstream reads.
+  unset KAREN_PROJECT_KEY
+  # Isolate the config bootstrap.sh auto-registers into. Without this,
+  # bootstrap.sh's step-0 auto-register falls back to the REAL
+  # $HOME/.karen/config.yaml (setup() doesn't override HOME) and writes a
+  # 'project' entry there — a genuine, separate pre-existing test-isolation
+  # bug (Suite 10's bootstrap tests already do this on every run; flagged to
+  # the manager rather than fixed here, out of P1 scope). Left un-isolated,
+  # a STALE 'project' entry from a prior test run's now-deleted tmpdir wins
+  # over $KAREN_PROJECT_DIR in spawn.sh's WORKDIR resolution and the spawn
+  # errors out — found via exactly that failure while writing this test.
+  export KAREN_CONFIG="$TEST_TMPDIR/isolated-config.yaml"
+  cat > "$MOCK_BIN/claude" << MOCK
+#!/usr/bin/env bash
+"$SCAFFOLD_ROOT/scripts/spawn.sh" dev1 "test task" > "$TEST_TMPDIR/_spawn_output" 2>&1
+exit 0
+MOCK
+  chmod +x "$MOCK_BIN/claude"
+  cd "$TEST_TMPDIR/project"
+  "$SCAFFOLD_ROOT/bootstrap.sh" "$TEST_TMPDIR/project" 2>/dev/null || true
+
+  # bootstrap.sh runs a standalone project hub (WORKDIR/.agent), not the
+  # central-hub $KAREN_HUB_DIR the test harness pre-wires — that's the hub
+  # the mocked claude → spawn.sh chain actually writes into.
+  local PROJECT_HUB="$TEST_TMPDIR/project/.agent"
+  assert_file_exists "qualified inbox created (project-dev1.jsonl)" "$PROJECT_HUB/inbox/project-dev1.jsonl"
+  assert_file_not_exists "no bare inbox created (dev1.jsonl)" "$PROJECT_HUB/inbox/dev1.jsonl"
+
+  local cmux_state
+  cmux_state=$(cat "$MOCK_BIN/_cmux_ws_state" 2>/dev/null || echo "")
+  assert_contains "cmux display name is qualified project:role" "$cmux_state" "project:dev1"
+  assert_eq "display name is not bare-colon-prefixed (the reported bug)" "false" "$([[ "$cmux_state" == *" :dev1"* ]] && echo true || echo false)"
+  unset KAREN_CONFIG
+}
+
+test_msg_sh_delivers_to_existing_bare_inbox_for_already_running_old_agent() {
+  # An old-model agent is already running: bare inbox + bare live state file,
+  # no qualified inbox exists at all yet. A new-model sender (KAREN_PROJECT_KEY
+  # set) addresses it by its qualified name.
+  echo '{"from":"old","type":"message","ts":"t","body":"pre-existing"}' > "$KAREN_HUB_DIR/inbox/manager.jsonl"
+  echo "workspace:5001" > "$KAREN_HUB_DIR/state/manager_workspace"
+
+  "$SCAFFOLD_ROOT/scripts/msg.sh" test-manager "new message" message >/dev/null 2>&1 || true
+
+  local bare_lines
+  bare_lines=$(wc -l < "$KAREN_HUB_DIR/inbox/manager.jsonl" | tr -d ' ')
+  assert_eq "message delivered into the EXISTING bare inbox, not a new split file" "2" "$bare_lines"
+  assert_file_not_exists "no new qualified inbox forked off" "$KAREN_HUB_DIR/inbox/test-manager.jsonl"
+}
+
+test_msg_sh_delivers_to_the_live_inbox_when_both_bare_and_qualified_inboxes_exist() {
+  # The messy real-world state: BOTH inbox files already exist (e.g. from a
+  # prior partial fold-in), but only ONE identity is actually running right
+  # now. Delivery must follow the live one (state/<id>_workspace), not just
+  # "whichever inbox file happens to exist first."
+  echo '{"from":"old","type":"message","ts":"t","body":"stale bare history"}' > "$KAREN_HUB_DIR/inbox/manager.jsonl"
+  echo '{"from":"old","type":"message","ts":"t","body":"stale qualified history"}' > "$KAREN_HUB_DIR/inbox/test-manager.jsonl"
+  echo "workspace:5001" > "$KAREN_HUB_DIR/state/manager_workspace"
+  # deliberately no state/test-manager_workspace — bare is the live one
+
+  "$SCAFFOLD_ROOT/scripts/msg.sh" test-manager "routed to the live one" message >/dev/null 2>&1 || true
+
+  local bare_lines qualified_lines
+  bare_lines=$(wc -l < "$KAREN_HUB_DIR/inbox/manager.jsonl" | tr -d ' ')
+  qualified_lines=$(wc -l < "$KAREN_HUB_DIR/inbox/test-manager.jsonl" | tr -d ' ')
+  assert_eq "delivered to the LIVE bare inbox" "2" "$bare_lines"
+  assert_eq "stale qualified inbox untouched" "1" "$qualified_lines"
+}
+
+test_msg_sh_delivers_to_live_qualified_inbox_when_both_exist_but_qualified_is_live() {
+  echo '{"from":"old","type":"message","ts":"t","body":"stale bare history"}' > "$KAREN_HUB_DIR/inbox/manager.jsonl"
+  echo '{"from":"old","type":"message","ts":"t","body":"stale qualified history"}' > "$KAREN_HUB_DIR/inbox/test-manager.jsonl"
+  echo "workspace:6001" > "$KAREN_HUB_DIR/state/test-manager_workspace"
+  # deliberately no state/manager_workspace — qualified is the live one
+
+  "$SCAFFOLD_ROOT/scripts/msg.sh" test-manager "routed to the live one" message >/dev/null 2>&1 || true
+
+  local bare_lines qualified_lines
+  bare_lines=$(wc -l < "$KAREN_HUB_DIR/inbox/manager.jsonl" | tr -d ' ')
+  qualified_lines=$(wc -l < "$KAREN_HUB_DIR/inbox/test-manager.jsonl" | tr -d ' ')
+  assert_eq "stale bare inbox untouched" "1" "$bare_lines"
+  assert_eq "delivered to the LIVE qualified inbox" "2" "$qualified_lines"
+}
+
+test_msg_sh_uses_qualified_inbox_for_brand_new_agent() {
+  # Neither inbox nor state file exists for either name yet — genuinely new
+  # agent. New default must be qualified, not a silent revert to bare.
+  "$SCAFFOLD_ROOT/scripts/msg.sh" test-newagent "hello" message >/dev/null 2>&1 || true
+  assert_file_exists "new agent gets a qualified inbox" "$KAREN_HUB_DIR/inbox/test-newagent.jsonl"
+  assert_file_not_exists "no bare inbox created" "$KAREN_HUB_DIR/inbox/newagent.jsonl"
+}
+
+test_msg_sh_wakes_via_existing_live_bare_workspace_state_file() {
+  # No state/test-manager_workspace at all — if msg.sh addressed the qualified
+  # name directly (ignoring the live bare identity) it would fall into the
+  # "No workspace for test-manager" branch instead of successfully waking.
+  echo "workspace:5001" > "$KAREN_HUB_DIR/state/manager_workspace"
+  local out
+  out=$("$SCAFFOLD_ROOT/scripts/msg.sh" test-manager "wake me" message 2>&1) || true
+  assert_contains "wake attempted against the live bare workspace" "$out" "Woke manager"
+  assert_eq "did not fall through to the no-workspace-found branch" "false" "$([[ "$out" == *"No workspace for"* ]] && echo true || echo false)"
+}
+
+test_spawn_reuse_finds_already_running_bare_agent_instead_of_double_spawning() {
+  # An old-model agent is alive: bare state file, and its REAL cmux tab is
+  # literally named ":dev1" (the exact bug shape) — mux_rename was called
+  # with that value back when PROJECT_KEY was empty. Seed the stateful mock
+  # cmux's list-workspaces output to reflect that, so the alive-check's
+  # verification pass (which greps list-workspaces, not just the state file)
+  # has real signal to match against.
+  echo "workspace:5001" > "$KAREN_HUB_DIR/state/dev1_workspace"
+  echo "workspace:5001 :dev1" > "$MOCK_BIN/_cmux_ws_state"
+
+  local out
+  out=$("$SCAFFOLD_ROOT/scripts/spawn.sh" dev1 "new task" 2>&1) || true
+  assert_contains "spawn.sh recognizes the already-running bare agent" "$out" "already alive"
+  assert_file_not_exists "no duplicate qualified state file created for a live bare agent" "$KAREN_HUB_DIR/state/test-dev1_workspace"
+  assert_file_not_exists "no duplicate qualified inbox created for a live bare agent" "$KAREN_HUB_DIR/inbox/test-dev1.jsonl"
+}
+
+# ── karen workspace create/list ──
+
+test_workspace_create_scaffolds_own_git_repo_and_karen_skeleton() {
+  export HOME="$TEST_TMPDIR/fakehome"
+  mkdir -p "$HOME"
+  "$SCAFFOLD_ROOT/scripts/workspace.sh" create testws >/dev/null 2>&1 || true
+
+  local ws="$HOME/karen-workspaces/testws"
+  assert_file_exists "workspace dir created" "$ws"
+  assert_file_exists "own git repo" "$ws/.git"
+  assert_file_exists ".karen/config.yaml" "$ws/.karen/config.yaml"
+  assert_contains "config has empty projects map" "$(cat "$ws/.karen/config.yaml")" "projects:"
+  assert_file_exists "inbox/" "$ws/.karen/inbox"
+  assert_file_exists "memory/" "$ws/.karen/memory"
+  assert_file_exists "state/" "$ws/.karen/state"
+  assert_file_exists "knowledge/" "$ws/.karen/knowledge"
+  assert_file_exists "communications.md" "$ws/.karen/communications.md"
+}
+
+test_workspace_create_errors_clearly_on_existing_workspace() {
+  export HOME="$TEST_TMPDIR/fakehome"
+  mkdir -p "$HOME"
+  "$SCAFFOLD_ROOT/scripts/workspace.sh" create testws >/dev/null 2>&1 || true
+  local rc=0
+  "$SCAFFOLD_ROOT/scripts/workspace.sh" create testws >/dev/null 2>&1 || rc=$?
+  assert_eq "second create on same name errors" "1" "$rc"
+}
+
+test_workspace_list_shows_created_workspaces() {
+  export HOME="$TEST_TMPDIR/fakehome"
+  mkdir -p "$HOME"
+  "$SCAFFOLD_ROOT/scripts/workspace.sh" create testws >/dev/null 2>&1 || true
+  local out
+  out=$("$SCAFFOLD_ROOT/scripts/workspace.sh" list 2>&1) || true
+  assert_contains "list shows the created workspace" "$out" "testws"
+}
+
+test_cli_dispatches_workspace_subcommand() {
+  export HOME="$TEST_TMPDIR/fakehome"
+  mkdir -p "$HOME"
+  local out
+  out=$("$SCAFFOLD_ROOT/bin/cli.sh" workspace create testws 2>&1) || true
+  assert_file_exists "karen workspace create reaches workspace.sh" "$HOME/karen-workspaces/testws/.karen/config.yaml"
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 # TEST RUNNER
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -2838,6 +3032,21 @@ main() {
   run_test test_fleet_manager_role_file_exists
   run_test test_fleet_manager_role_covers_required_sections
   run_test test_fleet_poller_plist_exists_and_valid
+  echo ""
+
+  echo "── Suite 21: workspace model P1 — qualified identity (backward-compat) + karen workspace ──"
+  run_test test_bootstrap_exports_qualified_project_key_for_manager_session
+  run_test test_bootstrap_then_spawn_produces_qualified_agent_identity_end_to_end
+  run_test test_msg_sh_delivers_to_existing_bare_inbox_for_already_running_old_agent
+  run_test test_msg_sh_delivers_to_the_live_inbox_when_both_bare_and_qualified_inboxes_exist
+  run_test test_msg_sh_delivers_to_live_qualified_inbox_when_both_exist_but_qualified_is_live
+  run_test test_msg_sh_uses_qualified_inbox_for_brand_new_agent
+  run_test test_msg_sh_wakes_via_existing_live_bare_workspace_state_file
+  run_test test_spawn_reuse_finds_already_running_bare_agent_instead_of_double_spawning
+  run_test test_workspace_create_scaffolds_own_git_repo_and_karen_skeleton
+  run_test test_workspace_create_errors_clearly_on_existing_workspace
+  run_test test_workspace_list_shows_created_workspaces
+  run_test test_cli_dispatches_workspace_subcommand
   echo ""
 
   # ── Summary ──
