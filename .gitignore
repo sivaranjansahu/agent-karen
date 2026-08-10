@@ -16,6 +16,9 @@
 .dolt/
 *.db
 
+# Runtime cache/log for scripts/github-project-sync.sh — machine-specific, not part of the scaffold
+.state/
+
 # OS junk
 .DS_Store
 

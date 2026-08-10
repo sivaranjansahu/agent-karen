@@ -191,6 +191,9 @@ settings = {
     'Stop': [{'matcher': '', 'hooks': [
       {'type': 'command', 'command': '$SCAFFOLD_DIR/hooks/notify-done.sh'},
       {'type': 'command', 'command': '$SCAFFOLD_DIR/hooks/auto-shutdown.sh'}
+    ]}],
+    'SessionEnd': [{'matcher': '', 'hooks': [
+      {'type': 'command', 'command': '$SCAFFOLD_DIR/hooks/github-project-sync.sh'}
     ]}]
   },
   'permissions': {
@@ -234,6 +237,9 @@ hooks['UserPromptSubmit'] = [{'matcher': '', 'hooks': [{'type': 'command', 'comm
 hooks['Stop'] = [{'matcher': '', 'hooks': [
     {'type': 'command', 'command': '$SCAFFOLD_DIR/hooks/notify-done.sh'},
     {'type': 'command', 'command': '$SCAFFOLD_DIR/hooks/auto-shutdown.sh'}
+]}]
+hooks['SessionEnd'] = [{'matcher': '', 'hooks': [
+    {'type': 'command', 'command': '$SCAFFOLD_DIR/hooks/github-project-sync.sh'}
 ]}]
 
 # Ensure cmux and scaffold script permissions exist
