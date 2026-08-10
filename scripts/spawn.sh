@@ -302,6 +302,7 @@ cd "$WORKDIR" && \
   export KAREN_PROJECT_KEY="$PROJECT_KEY" && \
   export KAREN_PROJECT_DIR="$WORKDIR" && \
   export BEADS_ROOT="$WORKDIR" && \
+  export AUTO_SHUTDOWN_MINS="\${AUTO_SHUTDOWN_MINS:-30}" && \
   if [[ ! -f CLAUDE.md ]] || ! grep -q '^# ROLE:' CLAUDE.md 2>/dev/null; then cp "$ROLE_FILE" CLAUDE.md; else echo '# Role file preserved (already exists with ROLE header)'; fi && \
   if [[ ! -d .beads ]]; then bd init </dev/null 2>/dev/null || true; fi && \
   bd quickstart 2>/dev/null || true && \
@@ -330,7 +331,7 @@ MESSAGING: Use msg.sh for all communication. Short names work within your projec
   $ROOT/scripts/msg.sh tagger-dev1 \"hello\" message  → cross-project messaging
 NEVER call cmux send directly — always use msg.sh or wake.sh.
 
-IMPORTANT: After completing your current task, check your inbox ($HUB_DIR/inbox/${AGENT_ID}.jsonl) for new messages before exiting. If inbox has no new tasks, report to your coordinator that you are idle and available. Only exit if explicitly told to or if no new work arrives within 600 seconds (10 minutes).
+IMPORTANT: After completing your current task, check your inbox ($HUB_DIR/inbox/${AGENT_ID}.jsonl) for new messages before exiting. If inbox has no new tasks, report to your coordinator that you are idle and available. Only exit if explicitly told to or if no new work arrives within 1800 seconds (30 minutes) — matches this agent's AUTO_SHUTDOWN_MINS.
 
 IMPORTANT: Before you finish your session, write key learnings, decisions, and context you want to preserve to $HUB_DIR/memory/${AGENT_ID}.md so your next spawn can pick up where you left off."
 EOF

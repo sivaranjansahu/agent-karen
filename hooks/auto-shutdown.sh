@@ -1,7 +1,34 @@
 #!/usr/bin/env bash
 # auto-shutdown.sh — Stop hook: check for idle agents after each response
 #
-# Enable: export AUTO_SHUTDOWN_MINS=15
+# Enable: export AUTO_SHUTDOWN_MINS=30
+#
+# IDLE SIGNAL (fixed 2026-08-09, see karen-bugs.md):
+# "Idle" used to mean "hasn't posted an outbound communications.md line
+# recently." That's a last-time-it-talked signal, not a last-time-it-worked
+# one: hours of real tool use between messages didn't reset it, and a
+# coordinator routing an agent fresh work via msg.sh didn't reset it either
+# — an agent could be handed a task and still get reaped minutes later.
+#
+# Ground truth for "is this agent doing anything right now" is its own
+# terminal screen. Empirically (`cmux read-screen` against a live busy vs.
+# idle session): a session mid-turn shows Claude Code's live status line
+# ("... esc to interrupt ... N tokens ...`); a session sitting at the input
+# prompt does not, and shows a bare `❯` instead. This also covers inbound
+# messages for free — mux_send types the message + Enter directly into the
+# terminal, which flips the screen to "busy" the moment it's delivered, no
+# separate inbox-mtime check needed.
+#
+# Per agent we track how long its screen has read "idle at prompt"
+# ($STATE/<agent>_idle_since), cleared the instant it's observed busy. A
+# genuinely abandoned/unconsumed terminal (nothing ever clears the marker)
+# still gets reaped after the threshold; an agent mid-task — however long
+# any single turn runs — never does, since it's never observed idle.
+#
+# Backends with no screen-read primitive (plain "terminal" mode) fall back to
+# the old comms.md heuristic, now also reset by the agent's inbox mtime (so
+# an inbound message resets the clock even without a screen to check) —
+# degraded relative to the screen check, but strictly better than before.
 
 IDLE_MINS="${AUTO_SHUTDOWN_MINS:-}"
 [[ -z "$IDLE_MINS" ]] && exit 0
@@ -13,32 +40,119 @@ SELF="${KAREN_AGENT_ID:-${AGENT_ROLE:-}}"
 HUB_DIR="${KAREN_HUB_DIR:-$(pwd)/.agent}"
 STATE="$HUB_DIR/state"
 COMMS="$HUB_DIR/communications.md"
+INBOX_DIR="$HUB_DIR/inbox"
 NOW=$(date "+%s")
 IDLE_SECS=$((IDLE_MINS * 60))
+GRACE_SECS="${AUTO_SHUTDOWN_GRACE_SECS:-60}"
+
+export KAREN_HUB_DIR="$HUB_DIR"
+source "$ROOT/lib/mux.sh" 2>/dev/null
+
+# Claude Code's live status line always pairs a token counter with an
+# interrupt hint while a turn is in flight; a stuck permission prompt is
+# "busy" in the sense that it needs attention, not idle abandonment. Neither
+# should ever be reaped.
+BUSY_RE="esc to interrupt|Do you want to proceed"
+# A bare input prompt is present (loosely — box-drawing chrome shares the row)
+# whenever the agent is genuinely sitting at rest.
+PROMPT_RE="❯"
+
+# Screen-based check for one agent's workspace.
+#   0 = confirmed idle-at-prompt   1 = confirmed busy   2 = unknown/unsupported
+_screen_state() {
+  local WS_ID="$1" SCREEN=""
+  case "$MUX_BACKEND" in
+    cmux)
+      command -v cmux &>/dev/null || return 2
+      SCREEN=$(cmux read-screen --workspace "$WS_ID" --lines 15 2>/dev/null) || return 2
+      ;;
+    tmux)
+      command -v tmux &>/dev/null || return 2
+      SCREEN=$(tmux capture-pane -t "$WS_ID" -p 2>/dev/null) || return 2
+      ;;
+    *)
+      return 2
+      ;;
+  esac
+  [[ -z "$SCREEN" ]] && return 2
+  echo "$SCREEN" | grep -qE "$BUSY_RE" && return 1
+  echo "$SCREEN" | grep -qF "$PROMPT_RE" && return 0
+  return 2
+}
 
 for ws_file in "$STATE"/*_workspace; do
   [[ -f "$ws_file" ]] || continue
   AGENT_ID=$(basename "$ws_file" _workspace)
   [[ "$AGENT_ID" == "$SELF" ]] && continue
+  # Never reap the manager — that's the human's own terminal, not a spawned
+  # worker (mirrors heartbeat.sh's own "never poke the manager" guard, which
+  # this script was missing).
+  [[ "$AGENT_ID" == *manager* ]] && continue
+  [[ -f "$STATE/${AGENT_ID}_done" ]] && continue
 
-  LAST_LINE=$(grep -n "\`$AGENT_ID\` →" "$COMMS" 2>/dev/null | tail -1 | cut -d: -f1)
-  [[ -z "$LAST_LINE" ]] && continue
+  WS_ID=$(cat "$ws_file" 2>/dev/null)
+  [[ -z "$WS_ID" ]] && continue
 
-  TS=$(sed -n "${LAST_LINE}s/.*\[\(.*\)\].*/\1/p" "$COMMS" 2>/dev/null)
-  [[ -z "$TS" ]] && continue
+  IDLE_SINCE_FILE="$STATE/${AGENT_ID}_idle_since"
 
-  LAST_EPOCH=$(date -j -f "%Y-%m-%d %H:%M:%S UTC" "$TS" "+%s" 2>/dev/null || echo "0")
-  [[ "$LAST_EPOCH" == "0" ]] && continue
+  _screen_state "$WS_ID"
+  STATE_CODE=$?
 
-  IDLE=$((NOW - LAST_EPOCH))
+  IDLE=0
+  if [[ $STATE_CODE -eq 1 ]]; then
+    # Confirmed busy right now — reset and move on, no matter how long any
+    # comms silence has been.
+    rm -f "$IDLE_SINCE_FILE"
+    continue
+  elif [[ $STATE_CODE -eq 0 ]]; then
+    # Confirmed idle-at-prompt right now — start (or continue) its clock.
+    if [[ ! -f "$IDLE_SINCE_FILE" ]]; then
+      echo "$NOW" > "$IDLE_SINCE_FILE"
+      continue
+    fi
+    IDLE_SINCE=$(cat "$IDLE_SINCE_FILE" 2>/dev/null || echo "$NOW")
+    [[ "$IDLE_SINCE" =~ ^[0-9]+$ ]] || IDLE_SINCE=$NOW
+    IDLE=$((NOW - IDLE_SINCE))
+  else
+    # No screen-read primitive available — degraded fallback: last outbound
+    # comms.md line, OR inbox mtime if that's more recent (inbound reset).
+    rm -f "$IDLE_SINCE_FILE"
+
+    LAST_LINE=$(grep -n "\`$AGENT_ID\` →" "$COMMS" 2>/dev/null | tail -1 | cut -d: -f1)
+    [[ -z "$LAST_LINE" ]] && continue
+
+    TS=$(sed -n "${LAST_LINE}s/.*\[\(.*\)\].*/\1/p" "$COMMS" 2>/dev/null)
+    [[ -z "$TS" ]] && continue
+
+    LAST_EPOCH=$(date -j -f "%Y-%m-%d %H:%M:%S UTC" "$TS" "+%s" 2>/dev/null || echo "0")
+    [[ "$LAST_EPOCH" == "0" ]] && continue
+
+    INBOX_FILE="$INBOX_DIR/${AGENT_ID}.jsonl"
+    if [[ -f "$INBOX_FILE" ]]; then
+      INBOX_EPOCH=$(stat -f "%m" "$INBOX_FILE" 2>/dev/null || echo "0")
+      [[ "$INBOX_EPOCH" -gt "$LAST_EPOCH" ]] && LAST_EPOCH="$INBOX_EPOCH"
+    fi
+
+    IDLE=$((NOW - LAST_EPOCH))
+  fi
+
   if [[ $IDLE -gt $IDLE_SECS ]]; then
-    export KAREN_HUB_DIR="$HUB_DIR"
-    source "$ROOT/lib/mux.sh" 2>/dev/null
     IDLE_HUMAN=$((IDLE / 60))
 
-    mux_send "$AGENT_ID" "Save key learnings to $HUB_DIR/memory/${AGENT_ID}.md — auto-shutdown in 3 seconds." 2>/dev/null || true
-    sleep 3
+    mux_send "$AGENT_ID" "Save key learnings to $HUB_DIR/memory/${AGENT_ID}.md — auto-shutdown in ${GRACE_SECS}s unless you become active." 2>/dev/null || true
+    sleep "$GRACE_SECS"
+
+    # Re-check before pulling the trigger — the warning itself, or anything
+    # else, may have made the agent active again during the grace window.
+    _screen_state "$WS_ID"
+    RECHECK=$?
+    if [[ $RECHECK -eq 1 ]]; then
+      rm -f "$IDLE_SINCE_FILE"
+      continue
+    fi
+
     mux_close "$AGENT_ID" 2>/dev/null || true
+    rm -f "$IDLE_SINCE_FILE"
 
     TS_HUMAN=$(date "+%Y-%m-%d %H:%M:%S UTC")
     {
