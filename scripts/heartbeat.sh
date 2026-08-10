@@ -19,6 +19,21 @@
 # 2. Detects stuck permission prompts → auto-approves with Enter
 # 3. Detects idle agents at prompt with unread inbox → sends wake-up
 # 4. Detects session-ended agents → escalates to manager
+# 5. Manager-only, separate from 1-4 above (there's no one to escalate a dead
+#    manager TO): watches for the usage-limit banner ("hit your ... limit ...
+#    resets ..."), parses the reset time, and nudges the SAME workspace once
+#    past it — a usage limit hangs a session, it does not kill the process,
+#    so most of the time there's nothing to respawn. Only if the manager's
+#    workspace is genuinely gone does this fall back to a real respawn
+#    (`karen start`), guarded by a fresh liveness check immediately before
+#    spawning — a duplicate manager giving conflicting instructions to
+#    working devs is worse than no manager at all. If the banner is present
+#    but its reset-time text doesn't match the known formats (e.g. a future
+#    Claude Code release changes the wording), this fails LOUDLY — a log
+#    line + a native notification — never silently. See
+#    docs in aiplaybook's .agent/context/aiplaybook/manager-usage-limit-watchdog-DESIGN.md
+#    for the full design rationale, including why this is zero-privilege
+#    (no launchd/pmset) and its AC-power-only caveat.
 #
 # Tunables (env): HEARTBEAT_VERIFY_RETRIES (default 3),
 #                 HEARTBEAT_VERIFY_DELAY seconds between retries (default 1).
@@ -145,6 +160,119 @@ escalate() {
   return 0
 }
 
+# Parse a usage-limit banner's "resets ..." fragment into a Unix epoch.
+# Handles the two documented shapes: a bare clock time ("3:45pm" — next
+# occurrence, i.e. today if still ahead, else tomorrow) and a weekday+time
+# ("Mon 12:00am" — next occurrence of that weekday). Prints nothing (and
+# exits nonzero) on anything it doesn't recognize — the caller treats that
+# as a hard parse failure, not a guess, per the "fail loud" requirement.
+_parse_reset_epoch() {
+  python3 -c "
+import sys, re
+from datetime import datetime, timedelta
+
+text = sys.stdin.read().strip()
+
+m = re.search(r'([0-9]{1,2}):([0-9]{2})\s*([ap]m)', text, re.I)
+if not m:
+    sys.exit(1)
+hour, minute, ampm = int(m.group(1)), int(m.group(2)), m.group(3).lower()
+if hour == 12:
+    hour = 0
+if ampm == 'pm':
+    hour += 12
+
+wd = re.search(r'\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b', text, re.I)
+now = datetime.now()
+target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+if wd:
+    names = ['mon','tue','wed','thu','fri','sat','sun']
+    want = names.index(wd.group(1).lower())
+    days_ahead = (want - now.weekday()) % 7
+    target = target + timedelta(days=days_ahead)
+    if days_ahead == 0 and target <= now:
+        target += timedelta(days=7)
+else:
+    if target <= now:
+        target += timedelta(days=1)
+
+print(int(target.timestamp()))
+"
+}
+
+# Manager-only watchdog — see the header comment (point 5) for why this is
+# separate from the generic per-dev checks in check_agents() below.
+check_manager() {
+  local AGENT_ID="$1" ws_file="$2" WS_ID
+  WS_ID=$(cat "$ws_file" 2>/dev/null || true)
+  [[ -z "$WS_ID" ]] && return
+
+  local RESET_FILE="$STATE/${AGENT_ID}_limit_reset_epoch"
+  local PARSE_FAIL_LOG="$STATE/${AGENT_ID}_parse_failures.log"
+  local RESPAWN_LOG="$STATE/${AGENT_ID}_respawn.log"
+
+  # Case B: genuinely gone (not hung — actually gone). Guarded respawn only.
+  if ! agent_alive "$WS_ID"; then
+    echo "[heartbeat] ✗✗ manager ($AGENT_ID) workspace gone — verifying before respawn"
+    # Re-check via the full workspace list right before acting — the
+    # highest-value guard here: never let a duplicate manager exist.
+    if mux_list 2>/dev/null | grep -qE "$WS_ID|$AGENT_ID"; then
+      echo "[heartbeat] manager reappeared during the dead-check — not respawning"
+      return
+    fi
+    mux_notify "Karen: manager is down" "$AGENT_ID workspace gone. Auto-respawning via karen start." 2>/dev/null || true
+    local WORKDIR PROJECT_KEY
+    WORKDIR="$(cd "$HUB_DIR/.." && pwd)"
+    PROJECT_KEY="$(basename "$WORKDIR")"
+    echo "[heartbeat] respawning manager: karen start $PROJECT_KEY (in $WORKDIR)"
+    if ( cd "$WORKDIR" && mux_spawn "manager" "karen start $PROJECT_KEY" "$WORKDIR" ) >>"$RESPAWN_LOG" 2>&1; then
+      echo "[heartbeat] ✓ manager respawn issued — see $RESPAWN_LOG"
+    else
+      echo "[heartbeat] ✗✗ manager respawn FAILED — see $RESPAWN_LOG — manual intervention needed"
+      mux_notify "Karen: manager respawn FAILED" "See $RESPAWN_LOG — needs a human." 2>/dev/null || true
+    fi
+    rm -f "$RESET_FILE"
+    return
+  fi
+
+  # Already tracking a pending reset — has it passed yet?
+  if [[ -f "$RESET_FILE" ]]; then
+    local RESET_EPOCH NOW
+    RESET_EPOCH=$(cat "$RESET_FILE" 2>/dev/null || echo "")
+    NOW=$(date +%s)
+    if [[ "$RESET_EPOCH" =~ ^[0-9]+$ ]] && [[ "$NOW" -ge "$RESET_EPOCH" ]]; then
+      echo "[heartbeat] ⏰ manager's usage window should have reset — nudging the same session"
+      cmux send --workspace "$WS_ID" "Your usage window has reset. Resume: check your inbox and continue orchestrating." 2>/dev/null || true
+      sleep 0.3
+      cmux send-key --workspace "$WS_ID" "Enter" 2>/dev/null || true
+      rm -f "$RESET_FILE"
+    fi
+    return
+  fi
+
+  # Not currently tracking anything — is the manager showing a usage-limit banner right now?
+  local SCREEN
+  SCREEN=$(cmux read-screen --workspace "$WS_ID" --lines 15 2>/dev/null || true)
+  echo "$SCREEN" | grep -qiE "hit your .*limit" || return
+
+  local RESET_TXT RESET_EPOCH
+  RESET_TXT=$(echo "$SCREEN" | grep -oiE "resets[^·|]*" | head -1)
+  RESET_EPOCH=$(printf '%s' "$RESET_TXT" | _parse_reset_epoch 2>/dev/null || true)
+
+  if [[ -z "$RESET_EPOCH" || ! "$RESET_EPOCH" =~ ^[0-9]+$ ]]; then
+    # FAIL LOUD: the banner text didn't match a known shape (format may have
+    # changed) — never silently do nothing forever.
+    echo "[heartbeat] ✗✗ manager shows a usage-limit banner but the reset time didn't parse: '$RESET_TXT' — logged to $PARSE_FAIL_LOG"
+    { echo "$(date -u +%FT%TZ) unparsed reset text: '$RESET_TXT'"; echo "$SCREEN"; echo "---"; } >> "$PARSE_FAIL_LOG"
+    mux_notify "Karen: manager usage-limit banner unparseable" "Format may have changed — see $PARSE_FAIL_LOG" 2>/dev/null || true
+    return
+  fi
+
+  echo "$RESET_EPOCH" > "$RESET_FILE"
+  echo "[heartbeat] manager hit a usage limit ($RESET_TXT) — will nudge the same session at epoch $RESET_EPOCH"
+}
+
 check_agents() {
   local DEAD=0
   local IDLE=0
@@ -153,8 +281,14 @@ check_agents() {
   for ws_file in "$STATE"/*_workspace; do
     [[ -f "$ws_file" ]] || continue
     AGENT_ID=$(basename "$ws_file" _workspace)
-    # Never poke the manager — that's the human's terminal
-    [[ "$AGENT_ID" == *manager* ]] && continue
+    # The manager gets its own, narrower watchdog (usage-limit hang +
+    # genuinely-dead respawn) — none of the generic per-dev checks below
+    # (auto-approving prompts, waking on unread inbox) apply to the human's
+    # own terminal.
+    if [[ "$AGENT_ID" == *manager* ]]; then
+      check_manager "$AGENT_ID" "$ws_file"
+      continue
+    fi
     # Skip agents that have been marked done
     [[ -f "$STATE/${AGENT_ID}_done" ]] && continue
     WS_ID=$(cat "$ws_file")
@@ -176,7 +310,14 @@ check_agents() {
     SCREEN=$(cmux read-screen --workspace "$WS_ID" --lines 15 2>/dev/null || true)
 
     # 2. Stuck on permission prompt → auto-approve
-    if echo "$SCREEN" | grep -q "Do you want to proceed\|bypass permissions"; then
+    # NOTE: match ONLY the real prompt text. Do NOT match "bypass permissions" —
+    # agents running in bypass mode render a PERMANENT status footer reading
+    # "⏵⏵ bypass permissions on (shift+tab to cycle)", which matched on every
+    # tick for every agent, so this branch's `continue` made check 3 (idle at
+    # prompt with unread inbox → wake) unreachable dead code. Observed
+    # 2026-07-25: a lead sat idle 6h with 3 unread dev completion reports while
+    # the daemon logged "Idle: 0, Woken: 0" every tick.
+    if echo "$SCREEN" | grep -q "Do you want to proceed"; then
       echo "[heartbeat] ⚠ $AGENT_ID — stuck on permission prompt → sending Enter"
       cmux send-key --workspace "$WS_ID" "Enter" 2>/dev/null || true
       continue
