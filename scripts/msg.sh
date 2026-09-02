@@ -2,7 +2,11 @@
 # msg.sh — send a message to another agent's inbox, wake its terminal,
 #           and record the communication in communications.md
 #
-# Usage:
+# Usage (PREFERRED — safe for any content, including backticks/$()/$vars):
+#   ./scripts/msg.sh <target> --file <path> [type]
+#   ./scripts/msg.sh <target> --stdin [type]         (pipe or heredoc the body in)
+#
+# Usage (legacy — the message is a literal shell argument; see WARNING below):
 #   ./scripts/msg.sh <target> "<message>" [type]
 #
 # target: agent ID (e.g., "prepare-dev1") or short name (e.g., "dev1" — auto-prefixed with project key)
@@ -12,12 +16,78 @@
 #   ./scripts/msg.sh manager "Brief complete. See context/brief.md"
 #   ./scripts/msg.sh lead "QA FAIL — 2 blockers" result
 #   ./scripts/msg.sh tagger-dev1 "Cross-project: need your API spec" question
+#   ./scripts/msg.sh lead --file /tmp/report.md result
+#   ./scripts/msg.sh lead --stdin result <<'EOF'
+#   Body with a literal `backtick`, $(a command), and $5 — none of this
+#   is touched by any shell, because it never becomes a shell argument.
+#   EOF
+#
+# WARNING on the legacy form (2026-09-02 — six incidents in one night,
+# four different agents including the one who documented the first one):
+# a backtick, `$(`, or a bare `$` before a word/digit inside "<message>"
+# is evaluated by the CALLING shell — the one that builds this script's
+# own command line — BEFORE this script's process even starts. That is
+# not something this script, or any script, can detect or repair: by the
+# time argv reaches here the damage (or lack of it) has already happened
+# one process up, structurally invisible from inside. Verified directly:
+# a trivial `echo "$1"` script receives the already-mangled string, with
+# no code of its own that could have touched it.
+# So: --file/--stdin exist BECAUSE the legacy form cannot be made safe
+# after the fact, not as a style preference. Prefer them for any message
+# built from free-form text (reports, pasted output, anything not typed
+# as a short fixed literal). The check below only ever warns, and only
+# about the legacy form, and only about what to do differently NEXT time.
 
 set -euo pipefail
 
-TARGET="${1:?Usage: msg.sh <target> \"<message>\" [type]}"
-MSG="${2:?Usage: msg.sh <target> \"<message>\" [type]}"
-TYPE="${3:-message}"
+TARGET="${1:?Usage: msg.sh <target> \"<message>\"|--file <path>|--stdin [type]}"
+
+# Safe input modes (2026-09-02) — read second below, and see the WARNING
+# above for why these exist and the legacy form can't be retrofitted.
+USED_LEGACY_FORM=0
+case "${2:-}" in
+  --file)
+    MSG_FILE="${3:?Usage: msg.sh <target> --file <path> [type]}"
+    MSG="$(cat -- "$MSG_FILE")" || { echo "✗ msg.sh: could not read --file '$MSG_FILE'" >&2; exit 1; }
+    TYPE="${4:-message}"
+    ;;
+  --stdin)
+    MSG="$(cat)"
+    TYPE="${3:-message}"
+    ;;
+  *)
+    MSG="${2:?Usage: msg.sh <target> \"<message>\"|--file <path>|--stdin [type]}"
+    TYPE="${3:-message}"
+    USED_LEGACY_FORM=1
+    ;;
+esac
+
+# Constraint 1 (2026-09-02 ruling): warn, never silently mangle — and
+# never refuse, since refusing to send strands the sender mid-report.
+# This CANNOT fix or detect damage already done (see the WARNING at the
+# top of this file for why — verified, not assumed); it can only flag,
+# for NEXT time, that this specific message arrived via the one form that
+# can't be made safe. Fully isolated in its own subshell with relaxed
+# options and suppressed stderr, guarded with || true — same shape as the
+# uncommitted-changes check below, for the same reason: this must be
+# structurally impossible to be the reason a message fails to send.
+if [[ "$USED_LEGACY_FORM" == "1" ]]; then
+  RISKY_HIT=""
+  RISKY_HIT=$(
+    set +e +u
+    set +o pipefail 2>/dev/null
+    printf '%s' "$MSG" | grep -Eq '`|\$\(|\$[A-Za-z0-9_]' 2>/dev/null && echo yes
+    true
+  ) 2>/dev/null || true
+  if [[ "${RISKY_HIT:-}" == "yes" ]]; then
+    echo "" >&2
+    echo "⚠️  This message used the legacy \"<message>\" form and contains a backtick, \$(, or \$ before a word/digit." >&2
+    echo "   If any of that was meant literally, it may have already been evaluated by YOUR shell before this script ever ran — this script cannot detect or undo that; it can only tell you now, for next time." >&2
+    echo "   Sending this message as received. Next time, use: msg.sh <target> --file <path> [type]  or  --stdin, so nothing is ever parsed as a shell argument." >&2
+    echo "" >&2
+  fi
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
