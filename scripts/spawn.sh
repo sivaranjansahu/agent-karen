@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # spawn.sh — create a new workspace, launch an agent, and log to communications.md
 #
-# Usage:
+# Usage (PREFERRED for anything beyond a one-line literal — see msg.sh's own
+# header for why: a backtick, $(, or a bare $ before a word inside "<context>"
+# is evaluated by the CALLING shell before this script's process even starts,
+# and nothing here can detect or repair that after the fact):
+#   ./scripts/spawn.sh <agent_id_or_role> --file <path> [working_dir]
+#   ./scripts/spawn.sh <agent_id_or_role> --stdin [working_dir]
+#
+# Usage (legacy — fine for a short fixed literal, risky for anything composed
+# or pasted):
 #   ./scripts/spawn.sh [--runtime <claude|pi>] <agent_id_or_role> "<context>" [working_dir]
 #
 # agent_id_or_role:
@@ -13,6 +21,13 @@
 #   ./scripts/spawn.sh dev1 "Implement the auth module. See brief." src/
 #   ./scripts/spawn.sh tagger-dev1 "Cross-project task" ~/Projects/tagger
 #   ./scripts/spawn.sh --runtime pi dev1 "Implement the auth module." src/
+#   ./scripts/spawn.sh dev1 --file .agent/context/proj/brief-dev1.md src/
+#
+# CLAUDE.md's own convention is "write anything beyond a one-line task as a
+# brief file" — --file is that convention finished: the brief was already
+# written to a file, so read it from there instead of composing it back into
+# a shell argument, which is exactly the hazard that convention exists to
+# avoid, worst on the longest briefs (also where silent word-loss costs most).
 
 set -euo pipefail
 

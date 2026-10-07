@@ -83,16 +83,7 @@ _screen_state() {
   case "$MUX_BACKEND" in
     cmux)
       command -v cmux &>/dev/null || return 2
-      # cmux >= 0.62 requires a workspace REF ("workspace:5"), not a bare index
-      # ("5"), which errors with "Workspace index not found". Before this
-      # normalisation the read always failed, _screen_state always returned 2,
-      # and every agent fell through to the degraded comms.md heuristic — i.e.
-      # the exact 2026-08-09 "killed agents mid-implementation" bug, silently
-      # reintroduced by a CLI arg-format change rather than by a code change.
-      local WS_REF="$WS_ID"
-      [[ "$WS_REF" =~ ^[0-9]+$ ]] && WS_REF="workspace:$WS_REF"
-      SCREEN=$(cmux read-screen --workspace "$WS_REF" --lines 15 2>/dev/null) || return 2
-      [[ "$SCREEN" == Error:* ]] && return 2
+      SCREEN=$(cmux read-screen --workspace "$WS_ID" --lines 15 2>/dev/null) || return 2
       ;;
     tmux)
       command -v tmux &>/dev/null || return 2

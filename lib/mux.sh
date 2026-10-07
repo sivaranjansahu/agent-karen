@@ -12,6 +12,13 @@
 #   mux_list
 #   mux_close "pm"
 
+# This file is meant to be `source`d by callers. `set -euo pipefail` here must
+# NOT leak into the caller's shell after sourcing completes — a caller that
+# doesn't expect strict mode (e.g. a Claude Code hook script) can be silently
+# killed by an unrelated, unguarded command later in its own script. Save the
+# caller's current option state and restore it once this file's own top-level
+# init (which does want strict mode) has run.
+_MUX_CALLER_OPTS="$(set +o)"
 set -euo pipefail
 
 _MUX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,6 +56,12 @@ _detect_backend() {
 }
 
 MUX_BACKEND="$(_detect_backend)"
+
+# Restore the caller's original shell options now that this file's own
+# top-level init is done. Function bodies below still run fine — bash
+# re-applies whatever options are active at *call* time, not source time.
+eval "$_MUX_CALLER_OPTS"
+unset _MUX_CALLER_OPTS
 
 # ── cmux backend ──────────────────────────────────────────────────────────────
 

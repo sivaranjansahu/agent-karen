@@ -4,6 +4,7 @@
 # Runs before every Claude response. Checks for unread messages in the
 # agent's inbox and outputs them so Claude sees them in context.
 
+main() {
 # Determine agent identity
 AGENT_ID="${KAREN_AGENT_ID:-}"
 if [[ -z "$AGENT_ID" ]]; then
@@ -63,11 +64,13 @@ INBOX="$HUB_DIR/inbox/${AGENT_ID}.jsonl"
 [[ -f "$INBOX" ]] || exit 0
 
 CURSOR_FILE="$HUB_DIR/state/${AGENT_ID}_inbox_cursor"
-TOTAL_LINES=$(wc -l < "$INBOX" | tr -d ' ')
+TOTAL_LINES=$(wc -l < "$INBOX" 2>/dev/null | tr -d ' ')
+[[ "$TOTAL_LINES" =~ ^[0-9]+$ ]] || TOTAL_LINES=0
 
 CURSOR=0
 if [[ -f "$CURSOR_FILE" ]]; then
-  CURSOR=$(cat "$CURSOR_FILE")
+  CURSOR=$(cat "$CURSOR_FILE" 2>/dev/null)
+  [[ "$CURSOR" =~ ^[0-9]+$ ]] || CURSOR=0
 fi
 
 if [[ "$TOTAL_LINES" -le "$CURSOR" ]]; then
@@ -87,3 +90,13 @@ done
 echo ""
 
 echo "$TOTAL_LINES" > "$CURSOR_FILE"
+return 0
+}
+
+# This is a UserPromptSubmit hook (not Stop — no `stop_hook_active` field
+# applies here). It doesn't source mux.sh or set -e, so it doesn't share
+# auto-shutdown.sh's exact failure mechanism, but it should still never be
+# able to block a turn on some future unguarded command — same always-exit-0
+# wrapper, for consistency.
+main "$@" || true
+exit 0

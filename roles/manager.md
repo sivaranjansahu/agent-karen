@@ -24,6 +24,7 @@ bd close <id>              # mark complete
 | PM       | `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh pm "<context>"`            |
 | Dev lead | `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh lead "<context>"`          |
 | QA       | `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh qa "<context>"`            |
+| UX       | `$AGENT_SCAFFOLD_ROOT/scripts/spawn.sh ux "<context>"` (Opus · Paper MCP · impeccable) |
 
 ## Sending messages
 ```
